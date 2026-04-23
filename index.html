@@ -201,7 +201,7 @@ const SB='https://sdjxruurjbnpxvsdcdwm.supabase.co';
 const SK='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNkanhydXVyamJucHh2c2RjZHdtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyMjU0MzUsImV4cCI6MjA5MDgwMTQzNX0.4xNUH63FLz72G04jgqLLDG7HdEFIsp2IwB5WCG3kiQw';
 const MN=['January','February','March','April','May','June','July','August','September','October','November','December'];
 const DN=['SUN','MON','TUE','WED','THU','FRI','SAT'];
-const H={'apikey':SK,'Authorization':'Bearer '+SK,'Content-Type':'application/json'};
+const AUTH_KEY='tj_supabase_session';
 
 // ── STATE ─────────────────────────────────────────────────────────────────────
 let cd=new Date(), sel=null, tab='trades', page='journal';
@@ -211,6 +211,8 @@ let stratFilter='all';
 let editingNoteId=null;
 let DB={trades:[],notes:[],summaries:[],deposits:[]};
 let chartInst=null;
+let SESSION=null;
+let CURRENT_USER=null;
 
 // ── TOAST ─────────────────────────────────────────────────────────────────────
 function toast(msg,type='ok'){
@@ -219,13 +221,107 @@ function toast(msg,type='ok'){
   clearTimeout(t._t); t._t=setTimeout(()=>t.className='toast',3000);
 }
 
+// ── AUTH ──────────────────────────────────────────────────────────────────────
+function saveSession(s){
+  SESSION=s;
+  CURRENT_USER=s&&s.user?s.user:null;
+  if(s)localStorage.setItem(AUTH_KEY,JSON.stringify(s));
+  else localStorage.removeItem(AUTH_KEY);
+}
+function loadSession(){
+  try{
+    const raw=localStorage.getItem(AUTH_KEY);
+    if(!raw)return null;
+    const s=JSON.parse(raw);
+    if(!s||!s.access_token)return null;
+    SESSION=s;CURRENT_USER=s.user||null;
+    return s;
+  }catch(e){localStorage.removeItem(AUTH_KEY);return null;}
+}
+function authHeaders(){
+  if(!SESSION||!SESSION.access_token)throw new Error('Please sign in first.');
+  return {'apikey':SK,'Authorization':'Bearer '+SESSION.access_token,'Content-Type':'application/json'};
+}
+async function authRequest(path,body){
+  const r=await fetch(SB+path,{
+    method:'POST',
+    headers:{'apikey':SK,'Content-Type':'application/json'},
+    body:JSON.stringify(body)
+  });
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok)throw new Error(data.error_description||data.msg||data.message||'Auth failed');
+  return data;
+}
+async function refreshSession(){
+  if(!SESSION||!SESSION.refresh_token)return false;
+  try{
+    const s=await authRequest('/auth/v1/token?grant_type=refresh_token',{refresh_token:SESSION.refresh_token});
+    saveSession(s);
+    return true;
+  }catch(e){saveSession(null);return false;}
+}
+async function signIn(){
+  const email=document.getElementById('auth-email').value.trim();
+  const password=document.getElementById('auth-pass').value;
+  const btn=document.getElementById('auth-signin');
+  btn.disabled=true;btn.textContent='Signing in...';
+  try{
+    const s=await authRequest('/auth/v1/token?grant_type=password',{email,password});
+    saveSession(s);await loadDB();renderApp();checkImport();toast('Signed in','ok');
+  }catch(e){toast(e.message,'err');btn.disabled=false;btn.textContent='Sign in';}
+}
+async function signUp(){
+  const email=document.getElementById('auth-email').value.trim();
+  const password=document.getElementById('auth-pass').value;
+  const btn=document.getElementById('auth-signup');
+  btn.disabled=true;btn.textContent='Creating...';
+  try{
+    const s=await authRequest('/auth/v1/signup',{email,password});
+    if(s.access_token){saveSession(s);await loadDB();renderApp();checkImport();toast('Account created','ok');}
+    else{toast('Account created. Check email if confirmation is enabled.','ok');btn.disabled=false;btn.textContent='Create account';}
+  }catch(e){toast(e.message,'err');btn.disabled=false;btn.textContent='Create account';}
+}
+async function signOut(){
+  saveSession(null);
+  DB={trades:[],notes:[],summaries:[],deposits:[]};
+  renderAuth();
+}
+function renderAuth(){
+  document.getElementById('app').innerHTML=
+    '<div class="topbar"><div><h1>Trading Journal</h1><div class="sub">PRIVATE LOGIN</div></div></div>'+
+    '<div class="panel" style="max-width:420px;margin:10vh auto 0">'+
+      '<div class="phead"><div class="pdate">Sign in</div></div>'+
+      '<div class="fr"><label>Email</label><input id="auth-email" type="email" autocomplete="email"></div>'+
+      '<div class="fr"><label>Password</label><input id="auth-pass" type="password" autocomplete="current-password"></div>'+
+      '<div class="mbtns">'+
+        '<button class="mbtn back" id="auth-signup" onclick="signUp()">Create account</button>'+
+        '<button class="mbtn save" id="auth-signin" onclick="signIn()">Sign in</button>'+
+      '</div>'+
+      '<div style="font-size:.72rem;color:var(--text3);font-family:var(--mono);margin-top:12px">Your journal loads only after Supabase authentication.</div>'+
+    '</div>';
+}
+
 // ── DB ────────────────────────────────────────────────────────────────────────
+async function dbFetch(url,opts){
+  opts=opts||{};
+  const extraHeaders=opts.headers||{};
+  opts={...opts,headers:{...authHeaders(),...extraHeaders}};
+  let r=await fetch(url,opts);
+  if(r.status===401&&await refreshSession()){
+    opts={...opts,headers:{...authHeaders(),...extraHeaders}};
+    r=await fetch(url,opts);
+  }
+  return r;
+}
+function withUser(rows){
+  return rows.map(r=>({...r,user_id:CURRENT_USER&&CURRENT_USER.id}));
+}
 async function loadDB(){
   const[t,n,s,d]=await Promise.all([
-    fetch(SB+'/rest/v1/trades?select=*&order=trade_date.asc,trade_time.asc',{headers:H}).then(r=>r.json()),
-    fetch(SB+'/rest/v1/notes?select=*&order=note_date.asc',{headers:H}).then(r=>r.json()),
-    fetch(SB+'/rest/v1/summaries?select=*',{headers:H}).then(r=>r.json()),
-    fetch(SB+'/rest/v1/deposits?select=*',{headers:H}).then(r=>r.json()),
+    dbFetch(SB+'/rest/v1/trades?select=*&order=trade_date.asc,trade_time.asc').then(r=>r.json()),
+    dbFetch(SB+'/rest/v1/notes?select=*&order=note_date.asc').then(r=>r.json()),
+    dbFetch(SB+'/rest/v1/summaries?select=*').then(r=>r.json()),
+    dbFetch(SB+'/rest/v1/deposits?select=*').then(r=>r.json()),
   ]);
   DB={
     trades:Array.isArray(t)?t:[],
@@ -236,24 +332,26 @@ async function loadDB(){
 }
 
 async function dbInsert(tbl,rows){
-  const r=await fetch(SB+'/rest/v1/'+tbl,{
-    method:'POST',headers:{...H,'Prefer':'return=minimal'},body:JSON.stringify(rows)
+  const r=await dbFetch(SB+'/rest/v1/'+tbl,{
+    method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify(withUser(rows))
   });
   if(!r.ok)throw new Error('Insert failed: '+await r.text());
 }
 
 async function dbUpsert(tbl,rows,onConflict){
-  const r=await fetch(SB+'/rest/v1/'+tbl,{
+  const conflict=tbl==='summaries'?'user_id,summary_date':onConflict;
+  const url=SB+'/rest/v1/'+tbl+(conflict?'?on_conflict='+conflict:'');
+  const r=await dbFetch(url,{
     method:'POST',
-    headers:{...H,'Prefer':'resolution=merge-duplicates,return=minimal'},
-    body:JSON.stringify(rows)
+    headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},
+    body:JSON.stringify(withUser(rows))
   });
   if(!r.ok)throw new Error('Upsert failed: '+await r.text());
 }
 
 async function dbUpdate(tbl,id,data){
-  const r=await fetch(SB+'/rest/v1/'+tbl+'?id=eq.'+id,{
-    method:'PATCH',headers:{...H,'Prefer':'return=minimal'},body:JSON.stringify(data)
+  const r=await dbFetch(SB+'/rest/v1/'+tbl+'?id=eq.'+id,{
+    method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify(data)
   });
   if(!r.ok)throw new Error('Update failed: '+await r.text());
 }
@@ -913,7 +1011,10 @@ function renderApp(){
   document.getElementById('app').innerHTML=
     '<div class="topbar">'+
       '<div><h1>Trading Journal</h1><div class="sub">YU HANG PON</div></div>'+
-      '<div class="balchip"><div class="lbl">CURRENT BALANCE</div><div class="val">$'+bal().toFixed(2)+'</div></div>'+
+      '<div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">'+
+        '<div class="balchip"><div class="lbl">CURRENT BALANCE</div><div class="val">$'+bal().toFixed(2)+'</div></div>'+
+        '<button class="navbtn" onclick="signOut()">sign out</button>'+
+      '</div>'+
     '</div>'+
     renderStats()+
     '<div class="page-tabs">'+
@@ -1178,9 +1279,21 @@ async function doImport(payload,btn,box){
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
-loadDB()
-  .then(()=>{renderApp();checkImport();})
-  .catch(e=>{document.getElementById('app').innerHTML='<div class="empty" style="padding:4rem">Failed to load<small>'+e.message+'</small></div>';});
+async function init(){
+  loadSession();
+  if(!SESSION){renderAuth();return;}
+  try{
+    await loadDB();renderApp();checkImport();
+  }catch(e){
+    if(await refreshSession()){
+      try{await loadDB();renderApp();checkImport();return;}catch(e2){e=e2;}
+    }
+    saveSession(null);
+    renderAuth();
+    toast('Please sign in again: '+e.message,'err');
+  }
+}
+init();
 </script>
 </body>
 </html>
