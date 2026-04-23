@@ -4,7 +4,7 @@
 -- 1. Deploy/open the updated app and create your Supabase account from the login form.
 -- 2. In Supabase SQL Editor, run:
 --      select id, email from auth.users order by created_at desc;
--- 3. Replace YOUR_AUTH_USER_ID below with your user id, then run this file.
+-- 3. Run this file. Existing rows will be assigned to your account id below.
 
 alter table public.trades add column if not exists user_id uuid references auth.users(id) on delete cascade;
 alter table public.notes add column if not exists user_id uuid references auth.users(id) on delete cascade;
@@ -16,11 +16,11 @@ alter table public.notes alter column user_id set default auth.uid();
 alter table public.summaries alter column user_id set default auth.uid();
 alter table public.deposits alter column user_id set default auth.uid();
 
--- Assign existing rows to your account. Replace this value before running.
-update public.trades set user_id = 'YOUR_AUTH_USER_ID' where user_id is null;
-update public.notes set user_id = 'YOUR_AUTH_USER_ID' where user_id is null;
-update public.summaries set user_id = 'YOUR_AUTH_USER_ID' where user_id is null;
-update public.deposits set user_id = 'YOUR_AUTH_USER_ID' where user_id is null;
+-- Assign existing rows to your account.
+update public.trades set user_id = '80cd75f6-eb63-495f-a0fc-a900ea1db826' where user_id is null;
+update public.notes set user_id = '80cd75f6-eb63-495f-a0fc-a900ea1db826' where user_id is null;
+update public.summaries set user_id = '80cd75f6-eb63-495f-a0fc-a900ea1db826' where user_id is null;
+update public.deposits set user_id = '80cd75f6-eb63-495f-a0fc-a900ea1db826' where user_id is null;
 
 alter table public.trades alter column user_id set not null;
 alter table public.notes alter column user_id set not null;
