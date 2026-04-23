@@ -21,6 +21,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 .topbar{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:1.5rem;gap:1rem;flex-wrap:wrap}
 h1{font-size:1.4rem;font-weight:500;letter-spacing:-.02em}
 .sub{font-family:var(--mono);font-size:.7rem;color:var(--text3);margin-top:3px;letter-spacing:.05em}
+.userline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:3px}
+.userline .sub{margin-top:0}
+.signout-btn{font-size:.65rem;padding:3px 8px}
 .balchip{font-family:var(--mono);background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:8px 14px;text-align:right}
 .balchip .lbl{font-size:.65rem;color:var(--text3);margin-bottom:3px}
 .balchip .val{font-size:1rem;font-weight:500;color:var(--green)}
@@ -1010,10 +1013,9 @@ function renderApp(){
   }
   document.getElementById('app').innerHTML=
     '<div class="topbar">'+
-      '<div><h1>Trading Journal</h1><div class="sub">YU HANG PON</div></div>'+
-      '<div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap">'+
+      '<div><h1>Trading Journal</h1><div class="userline"><div class="sub">YU HANG PON</div><button class="navbtn signout-btn" onclick="signOut()">sign out</button></div></div>'+
+      '<div>'+
         '<div class="balchip"><div class="lbl">CURRENT BALANCE</div><div class="val">$'+bal().toFixed(2)+'</div></div>'+
-        '<button class="navbtn" onclick="signOut()">sign out</button>'+
       '</div>'+
     '</div>'+
     renderStats()+
