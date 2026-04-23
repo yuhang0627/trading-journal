@@ -86,10 +86,30 @@ sudo systemctl status trading-journal-automation
    - `WEBHOOK_URL`
    - `WEBHOOK_SECRET`
    - `GMAIL_QUERY`
-5. Run `setupTimeTrigger()` once.
-6. Run `processVantageSummaries()` manually once to test.
+   - `START_AFTER_ISO`
+5. Optional: run `markOldSummariesImported()` once to label old Daily Confirmation emails.
+6. Run `setupTimeTrigger()` once.
+7. Run `processVantageSummaries()` manually once to test.
 
 The script labels imported threads with `trading-journal-imported`.
+
+## Remove Accidental Old Imports
+
+Only delete rows imported by automation. This leaves manual journal rows alone.
+
+```sql
+delete from public.trades
+where source = 'vantage_email'
+and trade_date < 'YYYY-MM-DD';
+
+delete from public.summaries
+where source = 'vantage_email'
+and summary_date < 'YYYY-MM-DD';
+
+delete from public.notes
+where source = 'vantage_email'
+and note_date < 'YYYY-MM-DD';
+```
 
 ## Test
 
