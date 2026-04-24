@@ -16,6 +16,7 @@ It adds:
 
 - `source`
 - `source_id`
+- `exit_date` for overnight trades
 - unique indexes for idempotent imports
 - `automation_import_events` log table
 
@@ -42,9 +43,13 @@ JOURNAL_USER_ID=80cd75f6-eb63-495f-a0fc-a900ea1db826
 ANTHROPIC_API_KEY=your-claude-api-key
 CLAUDE_MODEL=claude-sonnet-4-20250514
 ALLOWED_SENDERS=
+SOURCE_TIMEZONE_OFFSET=+03:00
+TARGET_TIMEZONE_OFFSET=+08:00
 ```
 
 Keep `.env` only on the VPS. Never commit it.
+
+`SOURCE_TIMEZONE_OFFSET` is the timezone used inside the broker email body. `TARGET_TIMEZONE_OFFSET` is the timezone you want stored in Supabase.
 
 ## systemd
 

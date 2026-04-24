@@ -365,6 +365,29 @@ function gT(d){return DB.trades.filter(t=>t.trade_date===d);}
 function gN(d){return DB.notes.filter(n=>n.note_date===d);}
 function gS(d){return DB.summaries.find(s=>s.summary_date===d);}
 function gD(d){return DB.deposits.find(x=>x.deposit_date===d);}
+function parseFlexibleDateTimeInput(value){
+  const text=String(value||'').trim().replace(/\//g,'-').replace(/\s+/g,' ');
+  if(!text)return null;
+  const dt=text.match(/^(\d{2}|\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2}))?$/);
+  if(dt){
+    const year=dt[1].length===2?String(2000+parseInt(dt[1],10)).padStart(4,'0'):dt[1];
+    return{date:year+'-'+dt[2]+'-'+dt[3],time:dt[4]!==undefined?dt[4].padStart(2,'0')+':'+dt[5]:null};
+  }
+  const tm=text.match(/^(\d{1,2}):(\d{2})$/);
+  if(tm)return{date:'',time:tm[1].padStart(2,'0')+':'+tm[2]};
+  return null;
+}
+function splitTradeDateTime(value,fallbackDate){
+  const parsed=parseFlexibleDateTimeInput(value);
+  if(!parsed)return{date:fallbackDate||'',time:null};
+  if(parsed.date&&parsed.time)return parsed;
+  if(parsed.date)return{date:parsed.date,time:null};
+  return{date:fallbackDate||'',time:parsed.time};
+}
+function combineTradeDateTime(date,time){
+  if(date&&time)return date+' '+time;
+  return time||date||'';
+}
 function bal(){
   return DB.deposits.reduce((s,d)=>s+parseFloat(d.amount),0)
         +DB.trades.reduce((s,t)=>s+parseFloat(t.pnl),0);
@@ -516,7 +539,7 @@ function generateTradingInsight(){
     if(t.execution_rating){
       execs[t.execution_rating] = (execs[t.execution_rating]||0) + parseFloat(t.pnl||0);
     }
-    if(t.exit_time && t.trade_time && t.exit_time < t.trade_time){
+    if((t.exit_date&&t.exit_date!==t.trade_date) || (t.exit_time && t.trade_time && t.exit_time < t.trade_time && !t.exit_date)){
       overnightCount++;
       overnightPnl += parseFloat(t.pnl||0);
     }
@@ -736,9 +759,9 @@ function renderTradeCard(t){
     '</div>';
   if(exp){
     // Format open/close with date for overnight positions
-    const openLabel=t.trade_time?t.trade_date+' '+t.trade_time:t.trade_date;
+    const openLabel=t.trade_time?combineTradeDateTime(t.trade_date,t.trade_time):t.trade_date;
     const closeLabel=t.exit_time?(t.exit_date||t.trade_date)+' '+t.exit_time:'-';
-    const isOvernight=t.exit_time&&t.exit_time<t.trade_time&&!t.exit_date;
+    const isOvernight=(t.exit_date&&t.exit_date!==t.trade_date) || (t.exit_time&&t.trade_time&&t.exit_time<t.trade_time&&!t.exit_date);
     const fields=[
       {l:'Open',v:openLabel+(isOvernight?' (overnight)':'')},
       {l:'Close',v:closeLabel+' ('+t.exit_type+')'},
@@ -1099,8 +1122,8 @@ function openEditTrade(id){
       '<div class="fr"><label>Fees</label>'+inp('et-fees','number',t.fees||0,'step="0.01"')+'</div>'+
     '</div>'+
     '<div class="fg">'+
-      '<div class="fr"><label>Entry Time</label>'+inp('et-time','time',t.trade_time)+'</div>'+
-      '<div class="fr"><label>Exit Time</label>'+inp('et-xtime','time',t.exit_time)+'</div>'+
+      '<div class="fr"><label>Entry Date / Time</label>'+inp('et-time','text',combineTradeDateTime(t.trade_date,t.trade_time),'placeholder="YYYY-MM-DD HH:MM or HH:MM"')+'</div>'+
+      '<div class="fr"><label>Exit Date / Time</label>'+inp('et-xtime','text',t.exit_time?combineTradeDateTime(t.exit_date||t.trade_date,t.exit_time):'','placeholder="YYYY-MM-DD HH:MM or HH:MM"')+'</div>'+
     '</div>'+
     '<div class="fg">'+
       '<div class="fr"><label>Balance After</label>'+inp('et-bal','number',t.balance_after,'step="0.01"')+'</div>'+
@@ -1128,13 +1151,18 @@ async function doSaveEditTrade(id,box){
   const n=id2=>{const v=parseFloat(document.getElementById(id2)?document.getElementById(id2).value:'');return isNaN(v)?null:v;};
   const saveBtn=document.getElementById('etSave');
   saveBtn.disabled=true; saveBtn.textContent='Saving...';
+  const defaultDate=g('et-date');
+  const entryDateTime=splitTradeDateTime(g('et-time'),defaultDate);
+  const exitDateTime=splitTradeDateTime(g('et-xtime'),entryDateTime.date||defaultDate);
   const data={
-    trade_date:g('et-date'), pair:g('et-pair'),
+    trade_date:entryDateTime.date||defaultDate, pair:g('et-pair'),
     direction:g('et-dir'), exit_type:g('et-etype'),
     entry:n('et-entry')||0, exit:n('et-exit')||0,
     pnl:n('et-pnl')||0, lots:n('et-lots')||0.01,
     fees:n('et-fees')||0,
-    trade_time:g('et-time')||null, exit_time:g('et-xtime')||null,
+    trade_time:entryDateTime.time||null,
+    exit_date:exitDateTime.time&&exitDateTime.date&&exitDateTime.date!==(entryDateTime.date||defaultDate)?exitDateTime.date:null,
+    exit_time:exitDateTime.time||null,
     balance_after:n('et-bal')||null, pct_gain:n('et-pct')||null,
     strategy:g('et-strat')||null,
     mood:g('et-mood')||null, emotional:g('et-emo')||null,
@@ -1178,7 +1206,7 @@ function buildAddModal(){
     '<div class="fg"><div class="fr"><label>Direction</label><select id="f-dir"><option>Buy</option><option>Sell</option></select></div><div class="fr"><label>Exit Type</label><select id="f-etype"><option>TP</option><option>SL</option><option>Manual</option></select></div></div>'+
     '<div class="fg"><div class="fr"><label>Entry Price</label><input type="number" id="f-entry" step="0.01" placeholder="4500.00"></div><div class="fr"><label>Exit Price</label><input type="number" id="f-exit" step="0.01" placeholder="4520.00"></div></div>'+
     '<div class="fg3"><div class="fr"><label>Lots</label><input type="number" id="f-lots" value="0.01" step="0.01"></div><div class="fr"><label>P&L (USD)</label><input type="number" id="f-pnl" step="0.01"></div><div class="fr"><label>Fees</label><input type="number" id="f-fees" value="0" step="0.01"></div></div>'+
-    '<div class="fg"><div class="fr"><label>Entry Time</label><input type="time" id="f-time"></div><div class="fr"><label>Exit Time</label><input type="time" id="f-xtime"></div></div>'+
+    '<div class="fg"><div class="fr"><label>Entry Date / Time</label><input type="text" id="f-time" placeholder="YYYY-MM-DD HH:MM or HH:MM"></div><div class="fr"><label>Exit Date / Time</label><input type="text" id="f-xtime" placeholder="YYYY-MM-DD HH:MM or HH:MM"></div></div>'+
     '<div class="fg"><div class="fr"><label>Balance After</label><input type="number" id="f-bal" step="0.01"></div><div class="fr"><label>% Gain</label><input type="number" id="f-pct" step="0.01"></div></div>'+
     '<div class="fsec">Strategy & Psychology</div>'+
     '<div class="fr"><label>Strategy / Reason</label><input type="text" id="f-strat" placeholder="e.g. 5M Sideway Signal"></div>'+
@@ -1208,10 +1236,16 @@ async function doSaveTrade(){
   const btn=document.getElementById('addSaveBtn');btn.disabled=true;btn.textContent='Saving...';
   const g=id=>document.getElementById(id)?document.getElementById(id).value:'';
   const n=id=>{const v=parseFloat(document.getElementById(id)?document.getElementById(id).value:'');return isNaN(v)?null:v;};
+  const defaultDate=g('f-date');
+  const entryDateTime=splitTradeDateTime(g('f-time'),defaultDate);
+  const exitDateTime=splitTradeDateTime(g('f-xtime'),entryDateTime.date||defaultDate);
   const row={
-    trade_date:g('f-date'),pair:g('f-pair'),direction:g('f-dir'),exit_type:g('f-etype'),
+    trade_date:entryDateTime.date||defaultDate,pair:g('f-pair'),direction:g('f-dir'),exit_type:g('f-etype'),
     entry:n('f-entry')||0,exit:n('f-exit')||0,pnl:n('f-pnl')||0,lots:n('f-lots')||0.01,
-    fees:n('f-fees')||0,trade_time:g('f-time')||null,exit_time:g('f-xtime')||null,
+    fees:n('f-fees')||0,
+    trade_time:entryDateTime.time||null,
+    exit_date:exitDateTime.time&&exitDateTime.date&&exitDateTime.date!==(entryDateTime.date||defaultDate)?exitDateTime.date:null,
+    exit_time:exitDateTime.time||null,
     balance_after:n('f-bal')||null,pct_gain:n('f-pct')||null,
     strategy:g('f-strat')||null,mood:g('f-mood')||null,
     emotional:g('f-emo')||null,execution_rating:g('f-exec')||null,

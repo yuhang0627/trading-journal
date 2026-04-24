@@ -3,6 +3,7 @@
 
 alter table public.trades add column if not exists source text;
 alter table public.trades add column if not exists source_id text;
+alter table public.trades add column if not exists exit_date date;
 alter table public.notes add column if not exists source text;
 alter table public.notes add column if not exists source_id text;
 alter table public.summaries add column if not exists source text;

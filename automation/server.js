@@ -15,7 +15,9 @@ const {
   JOURNAL_USER_ID,
   ANTHROPIC_API_KEY,
   CLAUDE_MODEL = 'claude-sonnet-4-20250514',
-  ALLOWED_SENDERS = ''
+  ALLOWED_SENDERS = '',
+  SOURCE_TIMEZONE_OFFSET = '+03:00',
+  TARGET_TIMEZONE_OFFSET = '+08:00'
 } = process.env;
 
 const requiredEnv = {
@@ -35,6 +37,10 @@ for (const [key, value] of Object.entries(requiredEnv)) {
 const allowedSenders = ALLOWED_SENDERS.split(',')
   .map((s) => s.trim().toLowerCase())
   .filter(Boolean);
+
+const sourceTimezoneMinutes = parseUtcOffsetToMinutes(SOURCE_TIMEZONE_OFFSET);
+const targetTimezoneMinutes = parseUtcOffsetToMinutes(TARGET_TIMEZONE_OFFSET);
+const brokerToJournalMinutes = targetTimezoneMinutes - sourceTimezoneMinutes;
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'trading-journal-automation' });
@@ -145,6 +151,7 @@ Schema:
       "fees": 0,
       "trade_time": "HH:MM or null",
       "exit_time": "HH:MM or null",
+      "exit_date": "YYYY-MM-DD or null",
       "balance_after": null,
       "pct_gain": null,
       "strategy": null,
@@ -168,6 +175,9 @@ Rules:
 - If a field is unknown, use null except required trade fields.
 - Do not invent trades.
 - Prefer the broker's exact P&L and lot values over calculations.
+- Times in the email body are broker local time (${SOURCE_TIMEZONE_OFFSET}).
+- Extract times exactly as written in the email. Do not convert timezones yourself.
+- If an overnight close date is visible, include exit_date as YYYY-MM-DD.
 
 Email metadata:
 From: ${email.from}
@@ -229,7 +239,8 @@ function normalizeParsedPayload(parsed, sourceId) {
 }
 
 function normalizeTrade(trade, sourceId, index) {
-  const tradeDate = cleanDate(trade.trade_date);
+  const normalizedDateTime = normalizeTradeDateTimes(trade);
+  const tradeDate = normalizedDateTime.trade_date || cleanDate(trade.trade_date || trade.date);
   const pair = cleanText(trade.pair || trade.symbol || '').toUpperCase();
   const pnl = numberOrZero(trade.pnl);
 
@@ -260,8 +271,9 @@ function normalizeTrade(trade, sourceId, index) {
     pnl,
     lots: numberOrDefault(trade.lots, 0.01),
     fees: numberOrZero(trade.fees),
-    trade_time: cleanTime(trade.trade_time),
-    exit_time: cleanTime(trade.exit_time),
+    trade_time: normalizedDateTime.trade_time,
+    exit_date: normalizedDateTime.exit_date,
+    exit_time: normalizedDateTime.exit_time,
     balance_after: numberOrNull(trade.balance_after),
     pct_gain: numberOrNull(trade.pct_gain),
     strategy: cleanTextOrNull(trade.strategy),
@@ -364,6 +376,8 @@ function cleanTextOrNull(value) {
 
 function cleanDate(value) {
   const text = cleanText(value);
+  const flexible = parseFlexibleDateTime(text);
+  if (flexible?.date) return flexible.date;
   if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
   const date = new Date(text);
   if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
@@ -372,9 +386,111 @@ function cleanDate(value) {
 
 function cleanTime(value) {
   const text = cleanText(value);
+  const flexible = parseFlexibleDateTime(text);
+  if (flexible?.time) return flexible.time;
   const match = text.match(/(\d{1,2}):(\d{2})/);
   if (!match) return null;
   return `${match[1].padStart(2, '0')}:${match[2]}`;
+}
+
+function normalizeTradeDateTimes(trade) {
+  const rawTradeDate = trade.trade_date || trade.date || trade.open_date || '';
+  const rawTradeTime = trade.trade_time || trade.open_time || trade.entry_time || '';
+  const rawExitDate = trade.exit_date || trade.close_date || '';
+  const rawExitTime = trade.exit_time || trade.close_time || '';
+
+  const entry = convertBrokerDateTime(rawTradeDate, rawTradeTime);
+  const tradeDate = entry.date || cleanDate(rawTradeDate);
+  const tradeTime = entry.time || cleanTime(rawTradeTime);
+
+  const exit = convertBrokerDateTime(rawExitDate || tradeDate, rawExitTime, tradeDate);
+  let exitDate = exit.date || cleanDate(rawExitDate);
+  const exitTime = exit.time || cleanTime(rawExitTime);
+
+  if (!exitDate && exitTime && tradeDate && tradeTime && exitTime < tradeTime) {
+    exitDate = addDays(tradeDate, 1);
+  }
+
+  return {
+    trade_date: tradeDate,
+    trade_time: tradeTime,
+    exit_date: exitDate && exitDate !== tradeDate ? exitDate : null,
+    exit_time: exitTime
+  };
+}
+
+function convertBrokerDateTime(dateValue, timeValue, fallbackDate = '') {
+  const parsedTime = parseFlexibleDateTime(timeValue);
+  if (parsedTime?.date && parsedTime.time) {
+    return shiftDateTimeParts(parsedTime.date, parsedTime.time, brokerToJournalMinutes);
+  }
+
+  const parsedDate = parseFlexibleDateTime(dateValue);
+  if (parsedDate?.date && parsedDate.time) {
+    return shiftDateTimeParts(parsedDate.date, parsedDate.time, brokerToJournalMinutes);
+  }
+
+  const date = parsedDate?.date || cleanDate(dateValue) || fallbackDate;
+  const time = parsedTime?.time || parsedDate?.time || cleanTime(timeValue);
+
+  if (!date || !time) {
+    return { date, time: time || null };
+  }
+
+  return shiftDateTimeParts(date, time, brokerToJournalMinutes);
+}
+
+function parseFlexibleDateTime(value) {
+  const text = cleanText(value).replace(/\//g, '-').replace(/\s+/g, ' ');
+  if (!text) return null;
+
+  const match = text.match(/^(\d{2}|\d{4})-(\d{2})-(\d{2})(?:[T ](\d{1,2}):(\d{2}))?$/);
+  if (match) {
+    const year = normalizeYear(match[1]);
+    return {
+      date: `${year}-${match[2]}-${match[3]}`,
+      time: match[4] !== undefined ? `${match[4].padStart(2, '0')}:${match[5]}` : null
+    };
+  }
+
+  const timeOnly = text.match(/^(\d{1,2}):(\d{2})$/);
+  if (timeOnly) {
+    return {
+      date: '',
+      time: `${timeOnly[1].padStart(2, '0')}:${timeOnly[2]}`
+    };
+  }
+
+  return null;
+}
+
+function normalizeYear(year) {
+  if (year.length === 4) return year;
+  const numericYear = Number(year);
+  return String(numericYear >= 70 ? 1900 + numericYear : 2000 + numericYear);
+}
+
+function shiftDateTimeParts(date, time, deltaMinutes) {
+  const [year, month, day] = date.split('-').map(Number);
+  const [hour, minute] = time.split(':').map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, day, hour, minute) + deltaMinutes * 60_000);
+  return {
+    date: shifted.toISOString().slice(0, 10),
+    time: shifted.toISOString().slice(11, 16)
+  };
+}
+
+function addDays(date, days) {
+  const [year, month, day] = date.split('-').map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, day + days));
+  return shifted.toISOString().slice(0, 10);
+}
+
+function parseUtcOffsetToMinutes(offset) {
+  const match = String(offset || '').trim().match(/^([+-])(\d{2}):(\d{2})$/);
+  if (!match) return 0;
+  const sign = match[1] === '-' ? -1 : 1;
+  return sign * (Number(match[2]) * 60 + Number(match[3]));
 }
 
 function normalizeDirection(value) {
