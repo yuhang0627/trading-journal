@@ -133,6 +133,24 @@ h1{font-size:1.4rem;font-weight:500;letter-spacing:-.02em}
 .depcard{background:var(--pdim);border:1px solid #3d2866;border-radius:9px;padding:14px 16px}
 .depamt{font-family:var(--mono);font-size:1.2rem;color:var(--ptext);font-weight:500;margin-bottom:4px}
 .depnote{font-size:.75rem;color:var(--purple);opacity:.8}
+.funding-list{display:flex;flex-direction:column;gap:8px}
+.funding-card{display:grid;grid-template-columns:110px 90px 1fr 110px;gap:10px;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:.78rem}
+.funding-date,.funding-note{color:var(--text2);font-family:var(--mono);font-size:.72rem}
+.funding-type{font-family:var(--mono);font-size:.68rem;text-transform:uppercase;letter-spacing:.04em}
+.funding-amount{text-align:right;font-family:var(--mono);font-weight:500}
+.funding-card.deposit{border-color:#244d31}.funding-card.deposit .funding-type,.funding-card.deposit .funding-amount{color:var(--green)}
+.funding-card.withdrawal{border-color:#4d2424}.funding-card.withdrawal .funding-type,.funding-card.withdrawal .funding-amount{color:var(--red)}
+.funding-history{display:flex;flex-direction:column;gap:6px}
+.funding-row{display:grid;grid-template-columns:110px 95px 1fr 120px;gap:10px;align-items:center;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:.78rem}
+.funding-row.head{background:transparent;border-color:transparent;color:var(--text3);font-size:.65rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.04em}
+.funding-row.deposit{border-color:#244d31}.funding-row.withdrawal{border-color:#4d2424}
+.funding-row .amt{text-align:right;font-family:var(--mono);font-weight:500}
+.funding-row.deposit .type,.funding-row.deposit .amt{color:var(--green)}
+.funding-row.withdrawal .type,.funding-row.withdrawal .amt{color:var(--red)}
+.monthly-funding{display:flex;flex-direction:column;gap:6px}
+.monthly-row{display:grid;grid-template-columns:1fr repeat(3,120px);gap:10px;align-items:center;background:var(--bg3);border-radius:8px;padding:10px 12px;font-size:.78rem}
+.monthly-row.head{background:transparent;color:var(--text3);font-size:.65rem;font-family:var(--mono);text-transform:uppercase;letter-spacing:.04em}
+.monthly-row span:not(:first-child){text-align:right;font-family:var(--mono)}
 .empty{text-align:center;padding:2rem;color:var(--text3);font-size:.82rem}
 .empty small{display:block;margin-top:6px;font-size:.7rem;font-family:var(--mono)}
 .analytics{display:flex;flex-direction:column;gap:1.2rem}
@@ -149,6 +167,15 @@ h1{font-size:1.4rem;font-weight:500;letter-spacing:-.02em}
 .stcard .stlbl{font-size:.65rem;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}
 .stcard .stval{font-size:1.3rem;font-weight:500}
 .stcard .stsub{font-size:.65rem;color:var(--text3);font-family:var(--mono);margin-top:3px}
+.balance-breakdown{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:14px}
+.source-bars{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.source-card{background:var(--bg3);border-radius:8px;padding:12px 14px}
+.source-title{font-family:var(--mono);font-size:.65rem;color:var(--text3);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px}
+.source-value{font-family:var(--mono);font-size:1.05rem;font-weight:500;margin-bottom:8px}
+.source-track{height:7px;border-radius:999px;background:var(--bg4);overflow:hidden}
+.source-fill{height:100%;border-radius:999px}
+.source-card .stsub{font-size:.65rem;color:var(--text3);font-family:var(--mono);margin-top:6px}
+.cashflow-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
 .dowgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
 .dowcard{background:var(--bg3);border-radius:8px;padding:10px;text-align:center}
 .downame{font-size:.65rem;font-family:var(--mono);color:var(--text3);margin-bottom:6px;text-transform:uppercase}
@@ -193,6 +220,9 @@ h1{font-size:1.4rem;font-weight:500;letter-spacing:-.02em}
 .strow{grid-template-columns:repeat(2,1fr)}.dowgrid{grid-template-columns:repeat(3,1fr)}
 .fg{grid-template-columns:1fr}.fg3{grid-template-columns:1fr 1fr}
 .tcard-body{grid-template-columns:repeat(2,1fr)}
+.balance-breakdown,.cashflow-summary,.source-bars{grid-template-columns:1fr 1fr}
+.funding-card,.funding-row{grid-template-columns:1fr 1fr}.funding-note{grid-column:1/-1}.funding-amount,.funding-row .amt{text-align:left}
+.monthly-row{grid-template-columns:1fr 1fr}.monthly-row span:not(:first-child){text-align:left}
 }
 </style>
 </head>
@@ -212,7 +242,7 @@ let viewMode='month', rangeFrom='', rangeTo='';
 let expandedTrades=new Set();
 let stratFilter='all';
 let editingNoteId=null;
-let DB={trades:[],notes:[],summaries:[],deposits:[]};
+let DB={trades:[],notes:[],summaries:[],deposits:[],withdrawals:[]};
 let chartInst=null;
 let SESSION=null;
 let CURRENT_USER=null;
@@ -286,7 +316,7 @@ async function signUp(){
 }
 async function signOut(){
   saveSession(null);
-  DB={trades:[],notes:[],summaries:[],deposits:[]};
+  DB={trades:[],notes:[],summaries:[],deposits:[],withdrawals:[]};
   renderAuth();
 }
 function renderAuth(){
@@ -320,17 +350,19 @@ function withUser(rows){
   return rows.map(r=>({...r,user_id:CURRENT_USER&&CURRENT_USER.id}));
 }
 async function loadDB(){
-  const[t,n,s,d]=await Promise.all([
+  const[t,n,s,d,w]=await Promise.all([
     dbFetch(SB+'/rest/v1/trades?select=*&order=trade_date.asc,trade_time.asc').then(r=>r.json()),
     dbFetch(SB+'/rest/v1/notes?select=*&order=note_date.asc').then(r=>r.json()),
     dbFetch(SB+'/rest/v1/summaries?select=*').then(r=>r.json()),
-    dbFetch(SB+'/rest/v1/deposits?select=*').then(r=>r.json()),
+    dbFetch(SB+'/rest/v1/deposits?select=*&order=deposit_date.asc,created_at.asc').then(r=>r.json()),
+    dbFetch(SB+'/rest/v1/withdrawals?select=*&order=withdraw_date.asc,created_at.asc').then(r=>r.json()),
   ]);
   DB={
     trades:Array.isArray(t)?t:[],
     notes:Array.isArray(n)?n:[],
     summaries:Array.isArray(s)?s:[],
-    deposits:Array.isArray(d)?d:[]
+    deposits:Array.isArray(d)?d:[],
+    withdrawals:Array.isArray(w)?w:[]
   };
 }
 
@@ -361,10 +393,43 @@ async function dbUpdate(tbl,id,data){
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 function f(n,d=2){return(n>=0?'+$':'-$')+Math.abs(n).toFixed(d);}
+function money(n,d=2){return'$'+Math.abs(n).toFixed(d);}
+function num(v){const n=parseFloat(v);return Number.isFinite(n)?n:0;}
 function gT(d){return DB.trades.filter(t=>t.trade_date===d);}
 function gN(d){return DB.notes.filter(n=>n.note_date===d);}
 function gS(d){return DB.summaries.find(s=>s.summary_date===d);}
-function gD(d){return DB.deposits.find(x=>x.deposit_date===d);}
+function gD(d){return DB.deposits.filter(x=>x.deposit_date===d);}
+function gW(d){return DB.withdrawals.filter(x=>x.withdraw_date===d);}
+function gF(d){return fundingEvents().filter(x=>x.date===d);}
+function isValidDateStr(v){return /^\d{4}-\d{2}-\d{2}$/.test(String(v||''))&&!isNaN(new Date(v+'T12:00:00').getTime());}
+function normalizeFundingRows(rows,type){
+  const dateKey=type==='deposit'?'deposit_date':'withdraw_date';
+  return (Array.isArray(rows)?rows:[]).map((row,i)=>{
+    const date=String(row&&row[dateKey]||row&&row.date||'').trim();
+    const amount=parseFloat(row&&row.amount);
+    if(!isValidDateStr(date))throw new Error((type==='deposit'?'Deposit':'Withdrawal')+' #'+(i+1)+' is missing a valid date.');
+    if(!Number.isFinite(amount))throw new Error((type==='deposit'?'Deposit':'Withdrawal')+' #'+(i+1)+' has an invalid amount.');
+    return{[dateKey]:date,amount:Math.abs(amount),note:String(row.note||'').trim()||null};
+  });
+}
+function fundingKey(row,type){
+  const date=type==='deposit'?row.deposit_date:row.withdraw_date;
+  return[type,date,num(row.amount).toFixed(2),String(row.note||'').trim()].join('|');
+}
+async function insertDeposits(rows){
+  const cleaned=normalizeFundingRows(rows,'deposit');
+  const seen=new Set(DB.deposits.map(r=>fundingKey(r,'deposit')));
+  const fresh=cleaned.filter(r=>{const k=fundingKey(r,'deposit');if(seen.has(k))return false;seen.add(k);return true;});
+  if(fresh.length)await dbInsert('deposits',fresh);
+  return{inserted:fresh.length,skipped:cleaned.length-fresh.length};
+}
+async function insertWithdrawals(rows){
+  const cleaned=normalizeFundingRows(rows,'withdrawal');
+  const seen=new Set(DB.withdrawals.map(r=>fundingKey(r,'withdrawal')));
+  const fresh=cleaned.filter(r=>{const k=fundingKey(r,'withdrawal');if(seen.has(k))return false;seen.add(k);return true;});
+  if(fresh.length)await dbInsert('withdrawals',fresh);
+  return{inserted:fresh.length,skipped:cleaned.length-fresh.length};
+}
 function parseFlexibleDateTimeInput(value){
   const text=String(value||'').trim().replace(/\//g,'-').replace(/\s+/g,' ');
   if(!text)return null;
@@ -389,8 +454,33 @@ function combineTradeDateTime(date,time){
   return time||date||'';
 }
 function bal(){
-  return DB.deposits.reduce((s,d)=>s+parseFloat(d.amount),0)
-        +DB.trades.reduce((s,t)=>s+parseFloat(t.pnl),0);
+  return fundingTotals().currentEquity;
+}
+function fundingTotals(trades){
+  trades=trades||DB.trades;
+  const totalDeposit=DB.deposits.reduce((s,d)=>s+num(d.amount),0);
+  const totalWithdraw=DB.withdrawals.reduce((s,w)=>s+num(w.amount),0);
+  const pnl=trades.reduce((s,t)=>s+num(t.pnl),0);
+  const netFunding=totalDeposit-totalWithdraw;
+  const currentEquity=netFunding+pnl;
+  return{totalDeposit,totalWithdraw,netFunding,pnl,currentEquity,roi:netFunding?currentEquity/netFunding*100-100:0};
+}
+function fundingEvents(){
+  return DB.deposits.map(d=>({type:'deposit',date:d.deposit_date,amount:num(d.amount),note:d.note||''}))
+    .concat(DB.withdrawals.map(w=>({type:'withdrawal',date:w.withdraw_date,amount:num(w.amount),note:w.note||''})))
+    .sort((a,b)=>b.date.localeCompare(a.date));
+}
+function getFilteredFunding(){
+  const events=fundingEvents();
+  if(viewMode==='month'){
+    const y=cd.getFullYear(),m=cd.getMonth();
+    return events.filter(e=>{const dt=new Date(e.date+'T12:00:00');return dt.getFullYear()===y&&dt.getMonth()===m;});
+  }
+  if(viewMode==='year'){
+    const y=cd.getFullYear();
+    return events.filter(e=>new Date(e.date+'T12:00:00').getFullYear()===y);
+  }
+  return events.filter(e=>(!rangeFrom||e.date>=rangeFrom)&&(!rangeTo||e.date<=rangeTo));
 }
 function getStrategies(){
   const s=new Set(['all']);
@@ -408,6 +498,7 @@ function getYears(){
   const s=new Set();
   DB.trades.forEach(t=>s.add(new Date(t.trade_date).getFullYear()));
   DB.deposits.forEach(d=>s.add(new Date(d.deposit_date).getFullYear()));
+  DB.withdrawals.forEach(w=>s.add(new Date(w.withdraw_date).getFullYear()));
   if(!s.size)s.add(new Date().getFullYear());
   return[...s].sort();
 }
@@ -670,12 +761,12 @@ function renderMonth(){
   for(let i=0;i<first;i++)cal+='<div class="dcell empty"></div>';
   for(let d=1;d<=dim;d++){
     const ds=y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
-    const ts=gT(ds).filter(t=>stratFilter==='all'||t.strategy===stratFilter),dep=gD(ds),notes=gN(ds);
+    const ts=gT(ds).filter(t=>stratFilter==='all'||t.strategy===stratFilter),funding=gF(ds),notes=gN(ds);
     const pnl=ts.reduce((s,t)=>s+parseFloat(t.pnl),0);
     const isT=today.getFullYear()===y&&today.getMonth()===m&&today.getDate()===d;
     let inner='<div class="dnum">'+d+'</div>',ec='';
     if(ts.length){const iv=Math.min(4,Math.ceil(Math.abs(pnl)/maxP*4)||1);ec=pnl>=0?' h'+iv:' l'+Math.min(3,iv);}
-    if(dep&&!ts.length){inner+='<div class="pbadge bd">deposit</div>';ec=' dep';}
+    if(funding.length&&!ts.length){inner+='<div class="pbadge bd">funding</div><div class="dmeta">'+funding.length+' tx</div>';ec=' dep';}
     else if(ts.length){inner+='<div class="pbadge '+(pnl>=0?'bp':'bn')+'">'+f(pnl)+'</div><div class="dmeta">'+ts.length+'t'+(notes.length?' · '+notes.length+'n':'')+'</div>';}
     else if(notes.length){inner+='<div><span class="ndot"></span></div><div class="dmeta" style="color:var(--purple)">'+notes.length+'n</div>';}
     cal+='<div class="dcell'+(isT?' today':'')+(sel===ds?' sel':'')+ec+'" onclick="pick(\''+ds+'\')">'+inner+'</div>';
@@ -788,7 +879,7 @@ function renderTradeCard(t){
 // ── DETAIL PANEL ──────────────────────────────────────────────────────────────
 function renderDetail(){
   if(!sel)return'<div class="panel"><div class="empty">Select a day to view details<small>click any date on the calendar</small></div></div>';
-  const ts=gT(sel).filter(t=>stratFilter==='all'||t.strategy===stratFilter),notes=gN(sel),dep=gD(sel),sum=gS(sel);
+  const ts=gT(sel).filter(t=>stratFilter==='all'||t.strategy===stratFilter),notes=gN(sel),funding=gF(sel),sum=gS(sel);
   const dpnl=ts.reduce((s,t)=>s+parseFloat(t.pnl),0);
   const dd=new Date(sel+'T12:00:00');
   let h='<div class="panel">'+
@@ -796,18 +887,25 @@ function renderDetail(){
       '<div class="pdate">'+dd.toDateString()+'</div>'+
       (ts.length?'<div class="ppnl" style="color:'+(dpnl>=0?'var(--green)':'var(--red)')+'">'+f(dpnl)+'</div>':'')+
     '</div>';
-  if(dep&&!ts.length){
-    h+='<div class="depcard"><div class="depamt">+$'+parseFloat(dep.amount).toFixed(2)+'</div><div class="depnote">'+dep.note+'</div></div>';
-    if(sum)h+='<div class="scard sd" style="margin-top:12px"><div class="slbl">account note</div>'+sum.text+'</div>';
-  } else {
-    h+='<div class="tabs">'+
-      '<button class="tab'+(tab==='trades'?' on':'')+'" onclick="setTab(\'trades\')">trades'+(ts.length?' ('+ts.length+')':'')+' </button>'+
-      '<button class="tab'+(tab==='notes'?' on':'')+'" onclick="setTab(\'notes\')">notes'+(notes.length?' ('+notes.length+')':'')+' </button>'+
-      '<button class="tab'+(tab==='summary'?' on':'')+'" onclick="setTab(\'summary\')">summary</button>'+
-    '</div>';
-    if(tab==='trades'){
+  h+='<div class="tabs">'+
+    '<button class="tab'+(tab==='trades'?' on':'')+'" onclick="setTab(\'trades\')">trades'+(ts.length?' ('+ts.length+')':'')+' </button>'+
+    '<button class="tab'+(tab==='funding'?' on':'')+'" onclick="setTab(\'funding\')">funding'+(funding.length?' ('+funding.length+')':'')+' </button>'+
+    '<button class="tab'+(tab==='notes'?' on':'')+'" onclick="setTab(\'notes\')">notes'+(notes.length?' ('+notes.length+')':'')+' </button>'+
+    '<button class="tab'+(tab==='summary'?' on':'')+'" onclick="setTab(\'summary\')">summary</button>'+
+  '</div>';
+  if(tab==='trades'){
       if(!ts.length)h+='<div class="empty">No trades this day</div>';
       else ts.forEach(t=>{h+=renderTradeCard(t);});
+    } else if(tab==='funding'){
+      if(!funding.length)h+='<div class="empty">No funding transaction this day<small>use + add entry to add deposit or withdrawal</small></div>';
+      else h+='<div class="funding-list">'+funding.map(x=>
+        '<div class="funding-card '+x.type+'">'+
+          '<div class="funding-date">'+x.date+'</div>'+
+          '<div class="funding-type">'+(x.type==='deposit'?'Deposit':'Withdraw')+'</div>'+
+          '<div class="funding-note">'+escHtml(x.note||'—')+'</div>'+
+          '<div class="funding-amount">'+(x.type==='deposit'?'+':'-')+money(x.amount)+'</div>'+
+        '</div>'
+      ).join('')+'</div>';
     } else if(tab==='notes'){
       if(!notes.length)h+='<div class="empty">No notes this day<small>use + add entry to add a note</small></div>';
       else{
@@ -846,7 +944,6 @@ function renderDetail(){
         const lb=sum.type==='positive'?'good day':sum.type==='negative'?'loss day':sum.type==='mixed'?'mixed day':'note';
         h+='<div class="scard '+cl+'"><div class="slbl">journal summary — '+lb+' (read-only)</div>'+sum.text+'</div>';
       } else h+='<div class="empty">No summary for this day</div>';
-    }
   }
   return h+'</div>';
 }
@@ -867,10 +964,116 @@ function getSession(ts){
   return'asia';
 }
 
+function renderFundingBalanceBreakdown(){
+  const ft=fundingTotals();
+  const sourceBase=Math.max(Math.abs(ft.netFunding),Math.abs(ft.pnl),1);
+  const fundingWidth=Math.max(3,Math.round(Math.abs(ft.netFunding)/sourceBase*100));
+  const pnlWidth=Math.max(3,Math.round(Math.abs(ft.pnl)/sourceBase*100));
+  const cards=[
+    {l:'Total Deposit',v:money(ft.totalDeposit),c:'var(--green)'},
+    {l:'Total Withdraw',v:'-'+money(ft.totalWithdraw),c:'var(--red)'},
+    {l:'Net Funding',v:(ft.netFunding>=0?'':'-')+money(ft.netFunding),c:ft.netFunding>=0?'var(--green)':'var(--red)'},
+    {l:'Realized Trading PnL',v:f(ft.pnl),c:ft.pnl>=0?'var(--green)':'var(--red)'},
+    {l:'Current Equity',v:(ft.currentEquity>=0?'':'-')+money(ft.currentEquity),c:ft.currentEquity>=0?'var(--green)':'var(--red)'},
+    {l:'ROI %',v:(ft.roi>=0?'+':'')+ft.roi.toFixed(2)+'%',c:ft.roi>=0?'var(--green)':'var(--red)'}
+  ];
+  return'<div class="acard"><h3>Funding Balance Breakdown · All-Time Account</h3>'+
+    '<div class="balance-breakdown">'+
+    cards.map(c=>'<div class="stcard"><div class="stlbl">'+c.l+'</div><div class="stval" style="color:'+c.c+'">'+c.v+'</div></div>').join('')+
+    '</div>'+
+    '<div class="source-bars">'+
+      '<div class="source-card"><div class="source-title">Funding contribution</div><div class="source-value" style="color:'+(ft.netFunding>=0?'var(--green)':'var(--red)')+'">'+(ft.netFunding>=0?'+':'-')+money(ft.netFunding)+'</div><div class="source-track"><div class="source-fill" style="width:'+fundingWidth+'%;background:'+(ft.netFunding>=0?'var(--green)':'var(--red)')+'"></div></div><div class="stsub">Deposits minus withdrawals</div></div>'+
+      '<div class="source-card"><div class="source-title">Trading contribution</div><div class="source-value" style="color:'+(ft.pnl>=0?'var(--green)':'var(--red)')+'">'+f(ft.pnl)+'</div><div class="source-track"><div class="source-fill" style="width:'+pnlWidth+'%;background:'+(ft.pnl>=0?'var(--green)':'var(--red)')+'"></div></div><div class="stsub">Realized P&L after closed trades</div></div>'+
+    '</div>'+
+  '</div>';
+}
+function renderFundingHistory(){
+  const events=fundingEvents();
+  if(!events.length)return'<div class="acard"><h3>Funding History</h3><div class="empty">No funding transactions yet<small>add deposits or withdrawals from + add entry</small></div></div>';
+  return'<div class="acard"><h3>Funding History</h3><div class="funding-history">'+
+    '<div class="funding-row head"><span>Date</span><span>Type</span><span>Note</span><span style="text-align:right">Amount</span></div>'+
+    events.map(x=>'<div class="funding-row '+x.type+'">'+
+      '<span class="funding-date">'+x.date+'</span>'+
+      '<span class="type">'+(x.type==='deposit'?'Deposit':'Withdraw')+'</span>'+
+      '<span class="funding-note">'+escHtml(x.note||'—')+'</span>'+
+      '<span class="amt">'+(x.type==='deposit'?'+':'-')+money(x.amount)+'</span>'+
+    '</div>').join('')+
+  '</div></div>';
+}
+function renderMonthlyFundingAnalytics(){
+  const events=getFilteredFunding();
+  const map={};
+  events.forEach(e=>{
+    const k=e.date.slice(0,7);
+    if(!map[k])map[k]={deposit:0,withdrawal:0};
+    map[k][e.type]+=e.amount;
+  });
+  const months=Object.keys(map).sort();
+  if(!months.length)return'<div class="acard"><h3>Monthly Funding Analytics</h3><div class="empty">No funding transactions in this view</div></div>';
+  return'<div class="acard"><h3>Monthly Funding Analytics</h3><div class="monthly-funding">'+
+    '<div class="monthly-row head"><span>Month</span><span>Deposits</span><span>Withdrawals</span><span>Net Cashflow</span></div>'+
+    months.map(k=>{
+      const v=map[k],net=v.deposit-v.withdrawal;
+      return'<div class="monthly-row">'+
+        '<span style="font-family:var(--mono);color:var(--text2)">'+k+'</span>'+
+        '<span style="color:var(--green)">+'+money(v.deposit)+'</span>'+
+        '<span style="color:var(--red)">-'+money(v.withdrawal)+'</span>'+
+        '<span style="color:'+(net>=0?'var(--green)':'var(--red)')+'">'+(net>=0?'+':'-')+money(net)+'</span>'+
+      '</div>';
+    }).join('')+
+  '</div></div>';
+}
+function fundingMonthlyRows(){
+  const events=getFilteredFunding();
+  const map={};
+  events.forEach(e=>{
+    const k=e.date.slice(0,7);
+    if(!map[k])map[k]={deposit:0,withdrawal:0};
+    map[k][e.type]+=e.amount;
+  });
+  return Object.keys(map).sort().map(k=>({month:k,deposit:map[k].deposit,withdrawal:map[k].withdrawal,net:map[k].deposit-map[k].withdrawal}));
+}
+function prepareFundingCharts(){
+  const events=[...fundingEvents()].sort((a,b)=>a.date.localeCompare(b.date));
+  let running=0;
+  window._fundingCurveLabels=[];
+  window._fundingCurveData=[];
+  events.forEach(e=>{
+    running+=e.type==='deposit'?e.amount:-e.amount;
+    window._fundingCurveLabels.push(e.date);
+    window._fundingCurveData.push(parseFloat(running.toFixed(2)));
+  });
+  const monthly=fundingMonthlyRows();
+  window._monthlyFundingLabels=monthly.map(r=>r.month);
+  window._monthlyFundingData=monthly.map(r=>parseFloat(r.net.toFixed(2)));
+  window._monthlyFundingColors=monthly.map(r=>r.net>=0?'rgba(74,222,128,0.7)':'rgba(248,113,113,0.7)');
+}
+function renderFundingCashflowSummary(){
+  const rows=fundingMonthlyRows();
+  const positive=rows.filter(r=>r.net>0);
+  const negative=rows.filter(r=>r.net<0);
+  const totalNet=rows.reduce((s,r)=>s+r.net,0);
+  const avgNet=rows.length?totalNet/rows.length:0;
+  const best=rows.length?[...rows].sort((a,b)=>b.net-a.net)[0]:null;
+  const worst=rows.length?[...rows].sort((a,b)=>a.net-b.net)[0]:null;
+  const cards=[
+    {l:'Net Cashflow',v:(totalNet>=0?'+':'-')+money(totalNet),c:totalNet>=0?'var(--green)':'var(--red)',s:rows.length+' active month'+(rows.length!==1?'s':'')},
+    {l:'Avg Monthly Net',v:(avgNet>=0?'+':'-')+money(avgNet),c:avgNet>=0?'var(--green)':'var(--red)',s:positive.length+' inflow · '+negative.length+' outflow'},
+    {l:'Largest Inflow',v:best?(best.net>=0?'+':'-')+money(best.net):'—',c:best&&best.net<0?'var(--red)':'var(--green)',s:best?best.month:'—'},
+    {l:'Largest Outflow',v:worst?(worst.net>=0?'+':'-')+money(worst.net):'—',c:worst&&worst.net<0?'var(--red)':'var(--green)',s:worst?worst.month:'—'}
+  ];
+  return'<div class="acard"><h3>Funding Cashflow Summary · '+(viewMode==='month'?MN[cd.getMonth()]+' '+cd.getFullYear():viewMode==='year'?cd.getFullYear():'Custom Range')+'</h3>'+
+    '<div class="cashflow-summary">'+cards.map(c=>'<div class="stcard"><div class="stlbl">'+c.l+'</div><div class="stval" style="color:'+c.c+'">'+c.v+'</div><div class="stsub">'+c.s+'</div></div>').join('')+'</div>'+
+    '<div class="fg">'+
+      '<div><div class="source-title">Cumulative Funding Curve</div><div style="position:relative;height:180px"><canvas id="fundingCurveChart"></canvas></div></div>'+
+      '<div><div class="source-title">Monthly Net Funding</div><div style="position:relative;height:180px"><canvas id="monthlyFundingChart"></canvas></div></div>'+
+    '</div>'+
+  '</div>';
+}
+
 function renderAnalytics(){
   const trades=getFiltered();
   const lbl=viewMode==='month'?MN[cd.getMonth()]+' '+cd.getFullYear():viewMode==='year'?cd.getFullYear():'custom range';
-  if(!trades.length)return'<div class="empty" style="padding:3rem">No trades for '+lbl+'<small>adjust the filter above</small></div>';
   const sess={asia:{n:'Asia 🌏',t:[]},london:{n:'London 🇬🇧',t:[]},newyork:{n:'New York 🇺🇸',t:[]}};
   trades.forEach(t=>{const s=getSession(t.trade_time);if(sess[s])sess[s].t.push(t);});
   const sessHtml=Object.values(sess).map(s=>{const st=calcStats(s.t);return'<div class="scard2"><div class="sname">'+s.n+'</div><div class="spnl" style="color:'+(st.tp>=0?'var(--green)':'var(--red)')+'">'+f(st.tp)+'</div><div class="smeta">'+st.tot+' trades · '+st.wr.toFixed(2)+'% WR</div></div>';}).join('');
@@ -929,7 +1132,7 @@ function renderAnalytics(){
 
   // ── Max drawdown ────────────────────────────────────────────────────────────
   const sortedAll=[...trades].sort((a,b)=>a.trade_date.localeCompare(b.trade_date));
-  let peak=DB.deposits.reduce((s,d)=>s+parseFloat(d.amount),0);
+  let peak=fundingTotals().netFunding;
   let runBal=peak,maxDD=0,maxDDPct=0,peakDate='',ddDate='';
   sortedAll.forEach(t=>{
     runBal+=parseFloat(t.pnl);
@@ -966,8 +1169,12 @@ function renderAnalytics(){
   const weekData=weekLabels.map(w=>parseFloat(weekMap[w].pnl.toFixed(2)));
   const weekColors=weekData.map(v=>v>=0?'rgba(74,222,128,0.7)':'rgba(248,113,113,0.7)');
 
-  window._weekLabels=weekLabels;window._weekData=weekData;window._weekColors=weekColors;
+  window._weekLabels=weekLabels;window._weekData=weekData;window._weekColors=weekColors;prepareFundingCharts();
   return'<div class="analytics">'+
+    renderFundingBalanceBreakdown()+
+    renderFundingCashflowSummary()+
+    renderMonthlyFundingAnalytics()+
+    renderFundingHistory()+
     '<div class="acard"><h3>Equity Curve · '+lbl+'</h3><div class="equity-wrap"><canvas id="eqChart"></canvas></div></div>'+
     '<div class="acard"><h3>Weekly P&L · '+lbl+'</h3><div style="position:relative;height:200px"><canvas id="weekChart"></canvas></div></div>'+
     '<div class="acard"><h3>Strategy Breakdown · '+lbl+'</h3>'+stratHtml+'</div>'+
@@ -982,6 +1189,32 @@ function renderAnalytics(){
 }
 
 function drawEquityChart(){
+  const fcel=document.getElementById('fundingCurveChart');
+  if(fcel&&window._fundingCurveLabels&&window._fundingCurveLabels.length){
+    if(chartInst&&chartInst.fundingCurve){try{chartInst.fundingCurve.destroy();}catch(e){}}
+    chartInst=chartInst||{};
+    chartInst.fundingCurve=new Chart(fcel,{
+      type:'line',
+      data:{labels:window._fundingCurveLabels,datasets:[{data:window._fundingCurveData,borderColor:'#a78bfa',backgroundColor:'rgba(167,139,250,0.08)',borderWidth:2,pointRadius:3,pointBackgroundColor:'#a78bfa',tension:0.28,fill:true}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>'$'+ctx.parsed.y.toFixed(2)}}},scales:{
+        x:{ticks:{color:'#566054',font:{family:'DM Mono',size:10},maxRotation:45,maxTicksLimit:6},grid:{color:'#2a2e2a'}},
+        y:{ticks:{color:'#566054',font:{family:'DM Mono',size:10},callback:v=>'$'+v.toFixed(0)},grid:{color:'#2a2e2a'}}
+      }}
+    });
+  }
+  const mfel=document.getElementById('monthlyFundingChart');
+  if(mfel&&window._monthlyFundingLabels&&window._monthlyFundingLabels.length){
+    if(chartInst&&chartInst.monthlyFunding){try{chartInst.monthlyFunding.destroy();}catch(e){}}
+    chartInst=chartInst||{};
+    chartInst.monthlyFunding=new Chart(mfel,{
+      type:'bar',
+      data:{labels:window._monthlyFundingLabels,datasets:[{data:window._monthlyFundingData,backgroundColor:window._monthlyFundingColors,borderRadius:4,borderSkipped:false}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>(ctx.parsed.y>=0?'+$':'-$')+Math.abs(ctx.parsed.y).toFixed(2)}}},scales:{
+        x:{ticks:{color:'#566054',font:{family:'DM Mono',size:10},maxRotation:45},grid:{color:'#2a2e2a'}},
+        y:{ticks:{color:'#566054',font:{family:'DM Mono',size:10},callback:v=>(v>=0?'+$':'-$')+Math.abs(v).toFixed(0)},grid:{color:'#2a2e2a'}}
+      }}
+    });
+  }
   // Draw weekly P&L bar chart
   const wel=document.getElementById('weekChart');
   if(wel&&window._weekLabels&&window._weekLabels.length){
@@ -1010,7 +1243,7 @@ function drawEquityChart(){
   }
   const el=document.getElementById('eqChart');if(!el)return;
   const trades=getFiltered().sort((a,b)=>a.trade_date.localeCompare(b.trade_date));
-  const startBal=DB.deposits.reduce((s,d)=>s+parseFloat(d.amount),0);
+  const startBal=fundingTotals().netFunding;
   let run=startBal; const labels=['start'],data=[startBal];
   trades.forEach(t=>{run+=parseFloat(t.pnl);labels.push(t.trade_date);data.push(parseFloat(run.toFixed(2)));});
   if(chartInst&&chartInst.equity){try{chartInst.equity.destroy();}catch(e){}}
@@ -1052,7 +1285,7 @@ function renderApp(){
 
 // ── NAVIGATION ────────────────────────────────────────────────────────────────
 function setPage(p){page=p;renderApp();}
-function pick(ds){sel=sel===ds?null:ds;if(sel){const ts=gT(ds),n=gN(ds);tab=ts.length?'trades':n.length?'notes':'summary';}editingNoteId=null;renderApp();}
+function pick(ds){sel=sel===ds?null:ds;if(sel){const ts=gT(ds),n=gN(ds),f=gF(ds);tab=ts.length?'trades':f.length?'funding':n.length?'notes':'summary';}editingNoteId=null;renderApp();}
 function pickRange(ds){sel=ds;tab='trades';viewMode='month';cd=new Date(ds+'T12:00:00');editingNoteId=null;renderApp();}
 function setTab(t){tab=t;editingNoteId=null;renderApp();}
 function chm(d){cd.setMonth(cd.getMonth()+d);sel=null;editingNoteId=null;renderApp();}
@@ -1197,6 +1430,7 @@ function buildAddModal(){
     '<button class="mtab'+(addTab==='trade'?' on':'')+'" onclick="switchAddTab(\'trade\')">trade</button>'+
     '<button class="mtab'+(addTab==='note'?' on':'')+'" onclick="switchAddTab(\'note\')">note</button>'+
     '<button class="mtab'+(addTab==='deposit'?' on':'')+'" onclick="switchAddTab(\'deposit\')">deposit</button>'+
+    '<button class="mtab'+(addTab==='withdrawal'?' on':'')+'" onclick="switchAddTab(\'withdrawal\')">withdraw</button>'+
   '</div>';
   let body='';
   if(addTab==='trade'){
@@ -1220,12 +1454,18 @@ function buildAddModal(){
     '<div class="fr"><label>Note</label><textarea id="f-ntext" placeholder="Write your thoughts..."></textarea></div>'+
     '<div class="fr"><label>Outcome</label><select id="f-outcome"><option value="">— none —</option><option value="correct">Correct call</option><option value="wrong">Wrong call</option><option value="pending">Pending</option></select></div>'+
     '<div class="mbtns"><button class="mbtn back" onclick="document.getElementById(\'addOverlay\').remove()">Cancel</button><button class="mbtn save" id="addSaveBtn" onclick="doSaveNote()">Save note</button></div>';
-  } else {
+  } else if(addTab==='deposit'){
     body=tabs+
     '<div class="fr"><label>Date</label><input type="date" id="f-date" value="'+today+'"></div>'+
     '<div class="fr"><label>Amount (USD)</label><input type="number" id="f-damt" step="0.01"></div>'+
     '<div class="fr"><label>Note</label><input type="text" id="f-dnote" placeholder="e.g. Top-up deposit"></div>'+
     '<div class="mbtns"><button class="mbtn back" onclick="document.getElementById(\'addOverlay\').remove()">Cancel</button><button class="mbtn save" id="addSaveBtn" onclick="doSaveDeposit()">Save deposit</button></div>';
+  } else {
+    body=tabs+
+    '<div class="fr"><label>Date</label><input type="date" id="f-date" value="'+today+'"></div>'+
+    '<div class="fr"><label>Amount (USD)</label><input type="number" id="f-wamt" step="0.01"></div>'+
+    '<div class="fr"><label>Note</label><input type="text" id="f-wnote" placeholder="e.g. Profit withdrawal"></div>'+
+    '<div class="mbtns"><button class="mbtn back" onclick="document.getElementById(\'addOverlay\').remove()">Cancel</button><button class="mbtn save" id="addSaveBtn" onclick="doSaveWithdrawal()">Save withdrawal</button></div>';
   }
   box.innerHTML='<div class="modal"><h2>Add entry</h2>'+body+'</div>';
   document.body.appendChild(box);
@@ -1267,9 +1507,19 @@ async function doSaveDeposit(){
   const btn=document.getElementById('addSaveBtn');btn.disabled=true;btn.textContent='Saving...';
   const g=id=>document.getElementById(id)?document.getElementById(id).value:'';
   try{
-    await dbInsert('deposits',[{deposit_date:g('f-date'),amount:parseFloat(g('f-damt'))||0,note:g('f-dnote')}]);
+    const res=await insertDeposits([{deposit_date:g('f-date'),amount:g('f-damt'),note:g('f-dnote')}]);
+    if(!res.inserted)throw new Error('Duplicate deposit already exists.');
     await loadDB();document.getElementById('addOverlay').remove();renderApp();toast('Deposit saved!','ok');
   }catch(e){toast('Error: '+e.message,'err');btn.disabled=false;btn.textContent='Save deposit';}
+}
+async function doSaveWithdrawal(){
+  const btn=document.getElementById('addSaveBtn');btn.disabled=true;btn.textContent='Saving...';
+  const g=id=>document.getElementById(id)?document.getElementById(id).value:'';
+  try{
+    const res=await insertWithdrawals([{withdraw_date:g('f-date'),amount:g('f-wamt'),note:g('f-wnote')}]);
+    if(!res.inserted)throw new Error('Duplicate withdrawal already exists.');
+    await loadDB();document.getElementById('addOverlay').remove();renderApp();toast('Withdrawal saved!','ok');
+  }catch(e){toast('Error: '+e.message,'err');btn.disabled=false;btn.textContent='Save withdrawal';}
 }
 
 // ── IMPORT ────────────────────────────────────────────────────────────────────
@@ -1287,9 +1537,11 @@ async function checkImport(){
 function showImportConfirm(payload){
   const lines=[];
   (payload.deposits||[]).forEach(d=>lines.push('deposit  '+d.deposit_date+'  +$'+d.amount));
+  (payload.withdrawals||[]).forEach(w=>lines.push('withdraw '+w.withdraw_date+'  -$'+w.amount));
   (payload.trades||[]).forEach(t=>lines.push('trade    '+t.trade_date+'  '+t.pair+' '+t.direction+' '+t.lots+'L'));
   (payload.notes||[]).forEach(n=>lines.push('note     '+n.note_date+'  '+n.type));
   (payload.summaries||[]).forEach(s=>lines.push('summary  '+s.summary_date+'  '+s.type));
+  if(!lines.length){toast('Import payload has no supported records','err');return;}
   const box=document.createElement('div');box.className='overlay';
   box.innerHTML='<div class="modal"><h2>Import new data?</h2><p style="font-size:.82rem;color:var(--text2);margin-bottom:12px">The following records will be added:</p>'+
     '<div class="imp-items">'+lines.map(l=>'<div>'+l+'</div>').join('')+'</div>'+
@@ -1301,16 +1553,23 @@ function showImportConfirm(payload){
   document.getElementById('impCancel').onclick=function(){box.remove();window.history.replaceState({},'',window.location.pathname);};
   document.getElementById('impConfirm').onclick=function(){doImport(payload,this,box);};
 }
+function createImportLink(payload){
+  return window.location.origin+window.location.pathname+'?import='+encodeURIComponent(btoa(JSON.stringify(payload)));
+}
+function generateImportLink(payload){return createImportLink(payload);}
 async function doImport(payload,btn,box){
   btn.disabled=true;btn.textContent='Importing...';
   try{
-    if(payload.deposits&&payload.deposits.length)await dbInsert('deposits',payload.deposits);
+    const depRes=payload.deposits&&payload.deposits.length?await insertDeposits(payload.deposits):{inserted:0,skipped:0};
+    const witRes=payload.withdrawals&&payload.withdrawals.length?await insertWithdrawals(payload.withdrawals):{inserted:0,skipped:0};
     if(payload.trades&&payload.trades.length)await dbInsert('trades',payload.trades);
     if(payload.summaries&&payload.summaries.length)await dbUpsert('summaries',payload.summaries,'summary_date');
     if(payload.upsert_summaries&&payload.upsert_summaries.length)await dbUpsert('summaries',payload.upsert_summaries,'summary_date');
     if(payload.notes&&payload.notes.length)await dbInsert('notes',payload.notes);
     box.remove();window.history.replaceState({},'',window.location.pathname);
-    await loadDB();renderApp();toast('Imported successfully!','ok');
+    await loadDB();renderApp();
+    const skipped=depRes.skipped+witRes.skipped;
+    toast(skipped?'Imported successfully; skipped '+skipped+' duplicate funding item'+(skipped!==1?'s':'')+'.':'Imported successfully!','ok');
   }catch(e){toast('Import failed: '+e.message,'err');btn.disabled=false;btn.textContent='Import ✓';}
 }
 

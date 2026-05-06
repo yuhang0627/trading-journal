@@ -10,27 +10,32 @@ alter table public.trades add column if not exists user_id uuid references auth.
 alter table public.notes add column if not exists user_id uuid references auth.users(id) on delete cascade;
 alter table public.summaries add column if not exists user_id uuid references auth.users(id) on delete cascade;
 alter table public.deposits add column if not exists user_id uuid references auth.users(id) on delete cascade;
+alter table public.withdrawals add column if not exists user_id uuid references auth.users(id) on delete cascade;
 
 alter table public.trades alter column user_id set default auth.uid();
 alter table public.notes alter column user_id set default auth.uid();
 alter table public.summaries alter column user_id set default auth.uid();
 alter table public.deposits alter column user_id set default auth.uid();
+alter table public.withdrawals alter column user_id set default auth.uid();
 
 -- Assign existing rows to your account.
 update public.trades set user_id = '80cd75f6-eb63-495f-a0fc-a900ea1db826' where user_id is null;
 update public.notes set user_id = '80cd75f6-eb63-495f-a0fc-a900ea1db826' where user_id is null;
 update public.summaries set user_id = '80cd75f6-eb63-495f-a0fc-a900ea1db826' where user_id is null;
 update public.deposits set user_id = '80cd75f6-eb63-495f-a0fc-a900ea1db826' where user_id is null;
+update public.withdrawals set user_id = '80cd75f6-eb63-495f-a0fc-a900ea1db826' where user_id is null;
 
 alter table public.trades alter column user_id set not null;
 alter table public.notes alter column user_id set not null;
 alter table public.summaries alter column user_id set not null;
 alter table public.deposits alter column user_id set not null;
+alter table public.withdrawals alter column user_id set not null;
 
 alter table public.trades enable row level security;
 alter table public.notes enable row level security;
 alter table public.summaries enable row level security;
 alter table public.deposits enable row level security;
+alter table public.withdrawals enable row level security;
 
 drop policy if exists "public insert" on public.trades;
 drop policy if exists "public read" on public.trades;
@@ -59,6 +64,13 @@ drop policy if exists "public update" on public.deposits;
 drop policy if exists "own deposits read" on public.deposits;
 drop policy if exists "own deposits insert" on public.deposits;
 drop policy if exists "own deposits update" on public.deposits;
+
+drop policy if exists "public insert" on public.withdrawals;
+drop policy if exists "public read" on public.withdrawals;
+drop policy if exists "public update" on public.withdrawals;
+drop policy if exists "own withdrawals read" on public.withdrawals;
+drop policy if exists "own withdrawals insert" on public.withdrawals;
+drop policy if exists "own withdrawals update" on public.withdrawals;
 
 create policy "own trades read" on public.trades
 for select to authenticated
@@ -108,6 +120,19 @@ for insert to authenticated
 with check (auth.uid() = user_id);
 
 create policy "own deposits update" on public.deposits
+for update to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
+
+create policy "own withdrawals read" on public.withdrawals
+for select to authenticated
+using (auth.uid() = user_id);
+
+create policy "own withdrawals insert" on public.withdrawals
+for insert to authenticated
+with check (auth.uid() = user_id);
+
+create policy "own withdrawals update" on public.withdrawals
 for update to authenticated
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
