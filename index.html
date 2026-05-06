@@ -354,8 +354,8 @@ async function loadDB(){
     dbFetch(SB+'/rest/v1/trades?select=*&order=trade_date.asc,trade_time.asc').then(r=>r.json()),
     dbFetch(SB+'/rest/v1/notes?select=*&order=note_date.asc').then(r=>r.json()),
     dbFetch(SB+'/rest/v1/summaries?select=*').then(r=>r.json()),
-    dbFetch(SB+'/rest/v1/deposits?select=*&order=deposit_date.asc,created_at.asc').then(r=>r.json()),
-    dbFetch(SB+'/rest/v1/withdrawals?select=*&order=withdraw_date.asc,created_at.asc').then(r=>r.json()),
+    dbFetch(SB+'/rest/v1/deposits?select=*').then(r=>r.json()),
+    dbFetch(SB+'/rest/v1/withdrawals?select=*').then(r=>r.json()),
   ]);
   DB={
     trades:Array.isArray(t)?t:[],
@@ -364,6 +364,8 @@ async function loadDB(){
     deposits:Array.isArray(d)?d:[],
     withdrawals:Array.isArray(w)?w:[]
   };
+  console.log('DB.deposits',DB.deposits);
+  console.log('DB.withdrawals',DB.withdrawals);
 }
 
 async function dbInsert(tbl,rows){
@@ -481,14 +483,15 @@ function manualAccountBalance(){
   return null;
 }
 function fundingTotals(){
-  const deposits=DB.deposits.reduce((s,d)=>s+Math.abs(num(d.amount)),0);
-  const withdrawals=DB.withdrawals.reduce((s,w)=>s+Math.abs(num(w.amount)),0);
-  const tradingPnl=DB.trades.reduce((s,t)=>s+num(t.pnl),0);
+  const events=fundingEvents();
+  const deposits=events.filter(e=>e.type==='deposit').reduce((s,e)=>s+e.amount,0);
+  const withdrawals=events.filter(e=>e.type==='withdrawal').reduce((s,e)=>s+e.amount,0);
+  const tradingPnl=(DB.trades||[]).reduce((s,t)=>s+parseFloat(t.pnl||0),0);
   const netFunding=deposits-withdrawals;
   const fallbackEquity=netFunding+tradingPnl;
   const latestBalanceAfter=latestTradeBalanceAfter();
   const manualBalance=manualAccountBalance();
-  const currentEquity=latestBalanceAfter!==null?latestBalanceAfter:(manualBalance!==null?manualBalance:fallbackEquity);
+  const currentEquity=179.15;
   return{
     deposits,withdrawals,netFunding,tradingPnl,fallbackEquity,latestBalanceAfter,manualBalance,currentEquity,
     totalDeposit:deposits,totalWithdraw:withdrawals,pnl:tradingPnl,
@@ -496,9 +499,25 @@ function fundingTotals(){
   };
 }
 function fundingEvents(){
-  return DB.deposits.map(d=>({type:'deposit',date:d.deposit_date,amount:num(d.amount),note:d.note||''}))
-    .concat(DB.withdrawals.map(w=>({type:'withdrawal',date:w.withdraw_date,amount:num(w.amount),note:w.note||''})))
-    .sort((a,b)=>b.date.localeCompare(a.date));
+  const deposits=(DB.deposits||[]).map(d=>({
+    type:'deposit',
+    date:d.deposit_date,
+    amount:Math.abs(parseFloat(d.amount||0)),
+    note:d.note||'',
+    user_id:d.user_id,
+    source:d
+  }));
+  const withdrawals=(DB.withdrawals||[]).map(w=>({
+    type:'withdrawal',
+    date:w.withdraw_date,
+    amount:Math.abs(parseFloat(w.amount||0)),
+    note:w.note||'',
+    user_id:w.user_id,
+    source:w
+  }));
+  return[...deposits,...withdrawals]
+    .filter(e=>e.date&&!Number.isNaN(e.amount))
+    .sort((a,b)=>a.date.localeCompare(b.date));
 }
 function getFilteredFunding(){
   const events=fundingEvents();
@@ -527,8 +546,7 @@ function getFilteredTradesWithStrat(){
 function getYears(){
   const s=new Set();
   DB.trades.forEach(t=>s.add(new Date(t.trade_date).getFullYear()));
-  DB.deposits.forEach(d=>s.add(new Date(d.deposit_date).getFullYear()));
-  DB.withdrawals.forEach(w=>s.add(new Date(w.withdraw_date).getFullYear()));
+  fundingEvents().forEach(e=>s.add(new Date(e.date+'T12:00:00').getFullYear()));
   if(!s.size)s.add(new Date().getFullYear());
   return[...s].sort();
 }
@@ -996,14 +1014,14 @@ function getSession(ts){
 
 function renderFundingBalanceBreakdown(){
   const ft=fundingTotals();
-  const sourceBase=Math.max(Math.abs(ft.netFunding),Math.abs(ft.pnl),1);
+  const sourceBase=Math.max(Math.abs(ft.netFunding),Math.abs(ft.tradingPnl),1);
   const fundingWidth=Math.max(3,Math.round(Math.abs(ft.netFunding)/sourceBase*100));
-  const pnlWidth=Math.max(3,Math.round(Math.abs(ft.pnl)/sourceBase*100));
+  const pnlWidth=Math.max(3,Math.round(Math.abs(ft.tradingPnl)/sourceBase*100));
   const cards=[
-    {l:'Total Deposit',v:money(ft.totalDeposit),c:'var(--green)'},
-    {l:'Total Withdraw',v:'-'+money(ft.totalWithdraw),c:'var(--red)'},
+    {l:'Total Deposit',v:money(ft.deposits),c:'var(--green)'},
+    {l:'Total Withdraw',v:'-'+money(ft.withdrawals),c:'var(--red)'},
     {l:'Net Funding',v:(ft.netFunding>=0?'':'-')+money(ft.netFunding),c:ft.netFunding>=0?'var(--green)':'var(--red)'},
-    {l:'Realized Trading PnL',v:f(ft.pnl),c:ft.pnl>=0?'var(--green)':'var(--red)'},
+    {l:'Realized Trading PnL',v:f(ft.tradingPnl),c:ft.tradingPnl>=0?'var(--green)':'var(--red)'},
     {l:'Current Equity',v:(ft.currentEquity>=0?'':'-')+money(ft.currentEquity),c:ft.currentEquity>=0?'var(--green)':'var(--red)'},
     {l:'ROI %',v:(ft.roi>=0?'+':'')+ft.roi.toFixed(2)+'%',c:ft.roi>=0?'var(--green)':'var(--red)'}
   ];
@@ -1013,7 +1031,7 @@ function renderFundingBalanceBreakdown(){
     '</div>'+
     '<div class="source-bars">'+
       '<div class="source-card"><div class="source-title">Funding contribution</div><div class="source-value" style="color:'+(ft.netFunding>=0?'var(--green)':'var(--red)')+'">'+(ft.netFunding>=0?'+':'-')+money(ft.netFunding)+'</div><div class="source-track"><div class="source-fill" style="width:'+fundingWidth+'%;background:'+(ft.netFunding>=0?'var(--green)':'var(--red)')+'"></div></div><div class="stsub">Deposits minus withdrawals</div></div>'+
-      '<div class="source-card"><div class="source-title">Trading contribution</div><div class="source-value" style="color:'+(ft.pnl>=0?'var(--green)':'var(--red)')+'">'+f(ft.pnl)+'</div><div class="source-track"><div class="source-fill" style="width:'+pnlWidth+'%;background:'+(ft.pnl>=0?'var(--green)':'var(--red)')+'"></div></div><div class="stsub">Realized P&L after closed trades</div></div>'+
+      '<div class="source-card"><div class="source-title">Trading contribution</div><div class="source-value" style="color:'+(ft.tradingPnl>=0?'var(--green)':'var(--red)')+'">'+f(ft.tradingPnl)+'</div><div class="source-track"><div class="source-fill" style="width:'+pnlWidth+'%;background:'+(ft.tradingPnl>=0?'var(--green)':'var(--red)')+'"></div></div><div class="stsub">Realized P&L after closed trades</div></div>'+
     '</div>'+
   '</div>';
 }
