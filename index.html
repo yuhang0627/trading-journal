@@ -456,14 +456,44 @@ function combineTradeDateTime(date,time){
 function bal(){
   return fundingTotals().currentEquity;
 }
-function fundingTotals(trades){
-  trades=trades||DB.trades;
-  const totalDeposit=DB.deposits.reduce((s,d)=>s+num(d.amount),0);
-  const totalWithdraw=DB.withdrawals.reduce((s,w)=>s+num(w.amount),0);
-  const pnl=trades.reduce((s,t)=>s+num(t.pnl),0);
-  const netFunding=totalDeposit-totalWithdraw;
-  const currentEquity=netFunding+pnl;
-  return{totalDeposit,totalWithdraw,netFunding,pnl,currentEquity,roi:netFunding?currentEquity/netFunding*100-100:0};
+function latestTradeBalanceAfter(){
+  const sorted=[...DB.trades].sort((a,b)=>{
+    const ad=(a.trade_date||'')+' '+(a.trade_time||'');
+    const bd=(b.trade_date||'')+' '+(b.trade_time||'');
+    return ad.localeCompare(bd);
+  });
+  for(let i=sorted.length-1;i>=0;i--){
+    const v=parseFloat(sorted[i].balance_after);
+    if(Number.isFinite(v))return v;
+  }
+  return null;
+}
+function manualAccountBalance(){
+  const candidates=[
+    typeof window!=='undefined'?window.manualAccountBalance:null,
+    typeof window!=='undefined'?window.MANUAL_ACCOUNT_BALANCE:null,
+    typeof localStorage!=='undefined'?localStorage.getItem('tj_manual_account_balance'):null
+  ];
+  for(const v of candidates){
+    const n=parseFloat(v);
+    if(Number.isFinite(n))return n;
+  }
+  return null;
+}
+function fundingTotals(){
+  const deposits=DB.deposits.reduce((s,d)=>s+Math.abs(num(d.amount)),0);
+  const withdrawals=DB.withdrawals.reduce((s,w)=>s+Math.abs(num(w.amount)),0);
+  const tradingPnl=DB.trades.reduce((s,t)=>s+num(t.pnl),0);
+  const netFunding=deposits-withdrawals;
+  const fallbackEquity=netFunding+tradingPnl;
+  const latestBalanceAfter=latestTradeBalanceAfter();
+  const manualBalance=manualAccountBalance();
+  const currentEquity=latestBalanceAfter!==null?latestBalanceAfter:(manualBalance!==null?manualBalance:fallbackEquity);
+  return{
+    deposits,withdrawals,netFunding,tradingPnl,fallbackEquity,latestBalanceAfter,manualBalance,currentEquity,
+    totalDeposit:deposits,totalWithdraw:withdrawals,pnl:tradingPnl,
+    roi:netFunding?(currentEquity-netFunding)/netFunding*100:0
+  };
 }
 function fundingEvents(){
   return DB.deposits.map(d=>({type:'deposit',date:d.deposit_date,amount:num(d.amount),note:d.note||''}))
@@ -1261,6 +1291,7 @@ function drawEquityChart(){
 // ── MAIN RENDER ───────────────────────────────────────────────────────────────
 function renderApp(){
   let main='';
+  console.table(fundingTotals());
   if(page==='journal'){
     const v=viewMode==='month'?renderMonth():viewMode==='year'?renderYear():renderRange();
     main=renderFilterBar()+v+(viewMode==='month'||sel?renderDetail():'');
