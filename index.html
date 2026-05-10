@@ -407,16 +407,16 @@ function isValidDateStr(v){return /^\d{4}-\d{2}-\d{2}$/.test(String(v||''))&&!is
 function normalizeFundingRows(rows,type){
   const dateKey=type==='deposit'?'deposit_date':'withdraw_date';
   return (Array.isArray(rows)?rows:[]).map((row,i)=>{
-    const date=String(row&&row[dateKey]||row&&row.date||'').trim();
+    const date=String(row&&row[dateKey]||row&&row.transaction_date||row&&row.date||'').trim();
     const amount=parseFloat(row&&row.amount);
     if(!isValidDateStr(date))throw new Error((type==='deposit'?'Deposit':'Withdrawal')+' #'+(i+1)+' is missing a valid date.');
     if(!Number.isFinite(amount))throw new Error((type==='deposit'?'Deposit':'Withdrawal')+' #'+(i+1)+' has an invalid amount.');
-    return{[dateKey]:date,amount:Math.abs(amount),note:String(row.note||'').trim()||null};
+    return{[dateKey]:date,amount:Math.abs(amount),note:String(row.note||row.comment||(type==='deposit'?'Deposit':'Withdrawal')).trim(),user_id:row.user_id||(CURRENT_USER&&CURRENT_USER.id)};
   });
 }
 function fundingKey(row,type){
   const date=type==='deposit'?row.deposit_date:row.withdraw_date;
-  return[type,date,num(row.amount).toFixed(2),String(row.note||'').trim()].join('|');
+  return[type,date,num(row.amount).toFixed(2),String(row.note||'').trim(),String(row.user_id||CURRENT_USER&&CURRENT_USER.id||'')].join('|');
 }
 async function insertDeposits(rows){
   const cleaned=normalizeFundingRows(rows,'deposit');
@@ -1605,9 +1605,10 @@ async function checkImport(){
   }catch(e){toast('Invalid import data','err');}
 }
 function showImportConfirm(payload){
+  const normalized=normalizeImportFunding(payload);
   const lines=[];
-  (payload.deposits||[]).forEach(d=>lines.push('deposit  '+d.deposit_date+'  +$'+d.amount));
-  (payload.withdrawals||[]).forEach(w=>lines.push('withdraw '+w.withdraw_date+'  -$'+w.amount));
+  normalized.deposits.forEach(d=>lines.push('deposit  '+d.deposit_date+'  +$'+d.amount));
+  normalized.withdrawals.forEach(w=>lines.push('withdraw '+w.withdraw_date+'  -$'+w.amount));
   (payload.trades||[]).forEach(t=>lines.push('trade    '+t.trade_date+'  '+t.pair+' '+t.direction+' '+t.lots+'L'));
   (payload.notes||[]).forEach(n=>lines.push('note     '+n.note_date+'  '+n.type));
   (payload.summaries||[]).forEach(s=>lines.push('summary  '+s.summary_date+'  '+s.type));
@@ -1623,6 +1624,20 @@ function showImportConfirm(payload){
   document.getElementById('impCancel').onclick=function(){box.remove();window.history.replaceState({},'',window.location.pathname);};
   document.getElementById('impConfirm').onclick=function(){doImport(payload,this,box);};
 }
+function normalizeImportFunding(payload){
+  payload=payload||{};
+  const funding=Array.isArray(payload.funding_transactions)?payload.funding_transactions:[];
+  const fundingDeposits=funding.filter(x=>String(x.type||'').toLowerCase()==='deposit');
+  const fundingWithdrawals=funding.filter(x=>['withdraw','withdrawal'].includes(String(x.type||'').toLowerCase()));
+  const depositRows=(Array.isArray(payload.deposits)?payload.deposits:[]).concat(fundingDeposits);
+  const withdrawalRows=(Array.isArray(payload.withdrawals)?payload.withdrawals:[])
+    .concat(Array.isArray(payload.withdraws)?payload.withdraws:[])
+    .concat(fundingWithdrawals);
+  return{
+    deposits:normalizeFundingRows(depositRows,'deposit'),
+    withdrawals:normalizeFundingRows(withdrawalRows,'withdrawal')
+  };
+}
 function createImportLink(payload){
   return window.location.origin+window.location.pathname+'?import='+encodeURIComponent(btoa(JSON.stringify(payload)));
 }
@@ -1630,8 +1645,12 @@ function generateImportLink(payload){return createImportLink(payload);}
 async function doImport(payload,btn,box){
   btn.disabled=true;btn.textContent='Importing...';
   try{
-    const depRes=payload.deposits&&payload.deposits.length?await insertDeposits(payload.deposits):{inserted:0,skipped:0};
-    const witRes=payload.withdrawals&&payload.withdrawals.length?await insertWithdrawals(payload.withdrawals):{inserted:0,skipped:0};
+    console.log('Raw import payload',payload);
+    const normalized=normalizeImportFunding(payload);
+    console.log('Normalized deposits',normalized.deposits);
+    console.log('Normalized withdrawals',normalized.withdrawals);
+    const depRes=normalized.deposits.length?await insertDeposits(normalized.deposits):{inserted:0,skipped:0};
+    const witRes=normalized.withdrawals.length?await insertWithdrawals(normalized.withdrawals):{inserted:0,skipped:0};
     if(payload.trades&&payload.trades.length)await dbInsert('trades',payload.trades);
     if(payload.summaries&&payload.summaries.length)await dbUpsert('summaries',payload.summaries,'summary_date');
     if(payload.upsert_summaries&&payload.upsert_summaries.length)await dbUpsert('summaries',payload.upsert_summaries,'summary_date');
