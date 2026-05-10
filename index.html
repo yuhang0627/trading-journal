@@ -375,6 +375,7 @@ async function dbInsert(tbl,rows){
   if(!r.ok)throw new Error('Insert failed: '+await r.text());
 }
 async function dbInsertReturning(tbl,rows){
+  console.log('dbInsertReturning',tbl,rows);
   const r=await dbFetch(SB+'/rest/v1/'+tbl,{
     method:'POST',
     headers:{'Prefer':'return=representation'},
@@ -437,8 +438,10 @@ async function insertDeposits(rows){
 }
 async function insertWithdrawals(rows){
   const cleaned=normalizeFundingRows(rows,'withdrawal');
+  console.log('insertWithdrawals cleaned',cleaned);
   const seen=new Set(DB.withdrawals.map(r=>fundingKey(r,'withdrawal')));
   const fresh=cleaned.filter(r=>{const k=fundingKey(r,'withdrawal');if(seen.has(k))return false;seen.add(k);return true;});
+  console.log('insertWithdrawals fresh',fresh);
   const insertedRows=fresh.length?await dbInsertReturning('withdrawals',fresh):[];
   return{inserted:fresh.length,skipped:cleaned.length-fresh.length,rows:insertedRows};
 }
@@ -1673,6 +1676,9 @@ async function doImport(payload,btn,box){
     box.remove();window.history.replaceState({},'',window.location.pathname);
     await loadDB();
     console.log('DB.withdrawals after reload',DB.withdrawals);
+    const missingWithdrawals=normalized.withdrawals.filter(w=>!DB.withdrawals.some(x=>fundingKey(x,'withdrawal')===fundingKey(w,'withdrawal')));
+    console.log('Missing withdrawals after reload',missingWithdrawals);
+    if(missingWithdrawals.length)throw new Error('Withdrawal insert verification failed after reload: '+JSON.stringify(missingWithdrawals));
     renderApp();
     const skipped=depRes.skipped+witRes.skipped;
     toast(skipped?'Imported successfully; skipped '+skipped+' duplicate funding item'+(skipped!==1?'s':'')+'.':'Imported successfully!','ok');
