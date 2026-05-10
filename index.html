@@ -374,6 +374,16 @@ async function dbInsert(tbl,rows){
   });
   if(!r.ok)throw new Error('Insert failed: '+await r.text());
 }
+async function dbInsertReturning(tbl,rows){
+  const r=await dbFetch(SB+'/rest/v1/'+tbl,{
+    method:'POST',
+    headers:{'Prefer':'return=representation'},
+    body:JSON.stringify(withUser(rows))
+  });
+  const text=await r.text();
+  if(!r.ok)throw new Error('Insert '+tbl+' failed: '+text);
+  return text?JSON.parse(text):[];
+}
 
 async function dbUpsert(tbl,rows,onConflict){
   const conflict=tbl==='summaries'?'user_id,summary_date':onConflict;
@@ -422,15 +432,15 @@ async function insertDeposits(rows){
   const cleaned=normalizeFundingRows(rows,'deposit');
   const seen=new Set(DB.deposits.map(r=>fundingKey(r,'deposit')));
   const fresh=cleaned.filter(r=>{const k=fundingKey(r,'deposit');if(seen.has(k))return false;seen.add(k);return true;});
-  if(fresh.length)await dbInsert('deposits',fresh);
-  return{inserted:fresh.length,skipped:cleaned.length-fresh.length};
+  const insertedRows=fresh.length?await dbInsertReturning('deposits',fresh):[];
+  return{inserted:fresh.length,skipped:cleaned.length-fresh.length,rows:insertedRows};
 }
 async function insertWithdrawals(rows){
   const cleaned=normalizeFundingRows(rows,'withdrawal');
   const seen=new Set(DB.withdrawals.map(r=>fundingKey(r,'withdrawal')));
   const fresh=cleaned.filter(r=>{const k=fundingKey(r,'withdrawal');if(seen.has(k))return false;seen.add(k);return true;});
-  if(fresh.length)await dbInsert('withdrawals',fresh);
-  return{inserted:fresh.length,skipped:cleaned.length-fresh.length};
+  const insertedRows=fresh.length?await dbInsertReturning('withdrawals',fresh):[];
+  return{inserted:fresh.length,skipped:cleaned.length-fresh.length,rows:insertedRows};
 }
 function parseFlexibleDateTimeInput(value){
   const text=String(value||'').trim().replace(/\//g,'-').replace(/\s+/g,' ');
@@ -1649,17 +1659,36 @@ async function doImport(payload,btn,box){
     const normalized=normalizeImportFunding(payload);
     console.log('Normalized deposits',normalized.deposits);
     console.log('Normalized withdrawals',normalized.withdrawals);
+    console.log('Normalized withdrawals count',normalized.withdrawals.length);
+    console.table(normalized.withdrawals);
     const depRes=normalized.deposits.length?await insertDeposits(normalized.deposits):{inserted:0,skipped:0};
+    console.log('Calling insertWithdrawals',normalized.withdrawals);
     const witRes=normalized.withdrawals.length?await insertWithdrawals(normalized.withdrawals):{inserted:0,skipped:0};
+    console.log('Inserted deposits response',depRes);
+    console.log('Inserted withdrawals response',witRes);
     if(payload.trades&&payload.trades.length)await dbInsert('trades',payload.trades);
     if(payload.summaries&&payload.summaries.length)await dbUpsert('summaries',payload.summaries,'summary_date');
     if(payload.upsert_summaries&&payload.upsert_summaries.length)await dbUpsert('summaries',payload.upsert_summaries,'summary_date');
     if(payload.notes&&payload.notes.length)await dbInsert('notes',payload.notes);
     box.remove();window.history.replaceState({},'',window.location.pathname);
-    await loadDB();renderApp();
+    await loadDB();
+    console.log('DB.withdrawals after reload',DB.withdrawals);
+    renderApp();
     const skipped=depRes.skipped+witRes.skipped;
     toast(skipped?'Imported successfully; skipped '+skipped+' duplicate funding item'+(skipped!==1?'s':'')+'.':'Imported successfully!','ok');
   }catch(e){toast('Import failed: '+e.message,'err');btn.disabled=false;btn.textContent='Import ✓';}
+}
+async function testInsertWithdrawal(){
+  if(!CURRENT_USER||!CURRENT_USER.id)throw new Error('Sign in before testing withdrawal insert.');
+  const row={withdraw_date:'2026-05-08',amount:138.59,note:'Withdrawal',user_id:CURRENT_USER.id};
+  console.log('Testing withdrawal insert',row);
+  const res=await fetch(SB+'/rest/v1/withdrawals',{
+    method:'POST',
+    headers:{...authHeaders(),Prefer:'return=representation'},
+    body:JSON.stringify([row])
+  });
+  console.log('status',res.status);
+  console.log('text',await res.text());
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
