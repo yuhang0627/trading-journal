@@ -236,8 +236,16 @@ const MN=['January','February','March','April','May','June','July','August','Sep
 const DN=['SUN','MON','TUE','WED','THU','FRI','SAT'];
 const AUTH_KEY='tj_supabase_session';
 
+function mytToday(){
+  const parts=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kuala_Lumpur',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());
+  const value=Object.fromEntries(parts.map(part=>[part.type,part.value]));
+  return value.year+'-'+value.month+'-'+value.day;
+}
+function mytCalendarDate(){return new Date(mytToday()+'T12:00:00')}
+
 // ── STATE ─────────────────────────────────────────────────────────────────────
-let cd=new Date(), sel=null, tab='trades', page='journal';
+let cd=mytCalendarDate(), sel=null, tab='trades', page='journal';
+let activeTodayDate=mytToday();
 let viewMode='month', rangeFrom='', rangeTo='';
 let expandedTrades=new Set();
 let stratFilter='all';
@@ -573,7 +581,7 @@ function getYears(){
   const s=new Set();
   DB.trades.forEach(t=>s.add(new Date(t.trade_date).getFullYear()));
   fundingEvents().forEach(e=>s.add(new Date(e.date+'T12:00:00').getFullYear()));
-  if(!s.size)s.add(new Date().getFullYear());
+  if(!s.size)s.add(mytCalendarDate().getFullYear());
   return[...s].sort();
 }
 function getFiltered(){
@@ -822,7 +830,7 @@ function renderFilterBar(){
 
 // ── MONTH VIEW ────────────────────────────────────────────────────────────────
 function renderMonth(){
-  const y=cd.getFullYear(),m=cd.getMonth(),today=new Date();
+  const y=cd.getFullYear(),m=cd.getMonth(),today=mytCalendarDate();
   const first=new Date(y,m,1).getDay(),dim=new Date(y,m+1,0).getDate();
   const pnls=[];
   for(let d=1;d<=dim;d++){
@@ -1376,7 +1384,7 @@ function setYear(y){cd.setFullYear(parseInt(y));sel=null;editingNoteId=null;rend
 function setMonth(m){cd.setMonth(parseInt(m));sel=null;editingNoteId=null;renderApp();}
 function setViewMode(m){viewMode=m;sel=null;editingNoteId=null;renderApp();}
 function drillMonth(y,m){cd=new Date(y,m,1);viewMode='month';sel=null;editingNoteId=null;renderApp();}
-function goToday(){cd=new Date();sel=null;viewMode='month';editingNoteId=null;renderApp();}
+function goToday(){cd=mytCalendarDate();sel=null;viewMode='month';editingNoteId=null;renderApp();}
 function toggleTrade(id){if(expandedTrades.has(String(id)))expandedTrades.delete(String(id));else expandedTrades.add(String(id));renderApp();}
 
 // ── NOTE EDIT (inline, no modal) ──────────────────────────────────────────────
@@ -1506,7 +1514,7 @@ function openAddModal(){
 function buildAddModal(){
   const existing=document.getElementById('addOverlay');
   if(existing)existing.remove();
-  const today=new Date().toISOString().split('T')[0];
+  const today=mytToday();
   const box=document.createElement('div');
   box.className='overlay'; box.id='addOverlay';
   const tabs='<div class="mtabs">'+
@@ -1698,6 +1706,14 @@ async function testInsertWithdrawal(){
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────────
+function syncTodayOnRollover(){
+  const today=mytToday();if(today===activeTodayDate)return;
+  activeTodayDate=today;goToday();
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncTodayOnRollover()});
+window.addEventListener('focus',syncTodayOnRollover);
+window.addEventListener('pageshow',syncTodayOnRollover);
+setInterval(syncTodayOnRollover,30000);
 async function init(){
   loadSession();
   if(!SESSION){renderAuth();return;}
